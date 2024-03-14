@@ -103,6 +103,7 @@ class GoalBERTConfig(BaseConfig):
     save_every: int = 10
     eval_every: int = 10
     eval_runs: int = 4
+    max_eval_steps: int = 100
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

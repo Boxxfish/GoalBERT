@@ -151,32 +151,32 @@ def main():
             "avg_v_loss": total_v_loss / config.training.train_iters,
             "avg_p_loss": total_p_loss / config.training.train_iters,
         }
-        # Evaluate the network's performance
+
+        # Evaluate performance
         if iter_idx % config.eval_every == 0:
             with torch.no_grad():
-                # Visualize
                 reward_total = 0
                 entropy_total = 0.0
                 total_steps = 0
                 for _ in range(config.eval_runs):
                     eval_obs = torch.Tensor(test_env.reset()[0])
-                    for _ in range(100):
+                    for _ in range(config.max_eval_steps):
                         distr = Categorical(
                             logits=p_net(eval_obs.unsqueeze(0)).squeeze(0)
                         )
                         action = distr.sample().numpy()
-                        obs_, reward, done, _, _ = test_env.step(action)
+                        obs_, reward, done, trunc, _ = test_env.step(action)
                         eval_obs = torch.Tensor(obs_)
                         reward_total += reward
                         entropy_total += distr.entropy().item()
-                        if done:
+                        if done or trunc:
                             break
                         total_steps += 1
 
                 log_dict.update(
                     {
                         "avg_eval_episode_reward": reward_total / config.eval_runs,
-                        "avg_eval_entropy": entropy_total / (config.eval_runs * total_steps),
+                        "avg_eval_entropy": entropy_total / total_steps,
                     }
                 )
 
