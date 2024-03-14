@@ -76,7 +76,7 @@ class BaseConfig:
 
 class TrainingConfig(BaseConfig):
     num_envs: int = (
-        256  # Number of environments to step through at once during sampling.
+        64  # Number of environments to step through at once during sampling.
     )
     train_steps: int = (
         128  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
@@ -97,7 +97,12 @@ class TrainingConfig(BaseConfig):
 
 class GoalBERTConfig(BaseConfig):
     training: TrainingConfig = TrainingConfig()
-    device: torch.device = torch.device("cuda")  # Device to use during training.
+    device: str = "cuda"
+    exp_name: str = "exp"
+    exp_root: str = "./experiments"
+    save_every: int = 10
+    eval_every: int = 10
+    eval_runs: int = 4
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
