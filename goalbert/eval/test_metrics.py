@@ -1,6 +1,6 @@
 from typing import *
 
-from eval.metrics import *
+from goalbert.eval.metrics import *
 
 
 def test_precision():

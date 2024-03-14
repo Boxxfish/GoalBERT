@@ -6,7 +6,7 @@ from torch import nn
 from torch.distributions import Categorical
 from tqdm import tqdm
 
-from .rollout_buffer import RolloutBuffer
+from goalbert.training.rollout_buffer import RolloutBuffer
 
 
 def train_ppo(

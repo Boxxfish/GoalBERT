@@ -1,6 +1,6 @@
 from typing import *
 
-from config import BaseConfig
+from goalbert.config import BaseConfig
 
 
 class ChildConfig(BaseConfig):

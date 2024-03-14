@@ -614,6 +614,17 @@ url = "https://download.pytorch.org/whl/cu118"
 reference = "pytorch-gpu"
 
 [[package]]
+name = "tqdm-stubs"
+version = "0.2.1"
+description = "Stub type files for tqdm"
+optional = false
+python-versions = ">=3.7,<4.0"
+files = [
+    {file = "tqdm-stubs-0.2.1.tar.gz", hash = "sha256:af7044737de561b2816b8b3fae1cb8af024ad0337311b9fc22d121cd3ab5c8e5"},
+    {file = "tqdm_stubs-0.2.1-py3-none-any.whl", hash = "sha256:cb794e89042aac254a77a4322a16f18dfd1d0d2ebe5b39cc4d3e6513fed00251"},
+]
+
+[[package]]
 name = "triton"
 version = "2.2.0"
 description = "A language and compiler for custom Deep Learning operations"
@@ -650,4 +661,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "cafb09b033e2c1211612fb5712b8deea41fe6dbe38f413c25c94aa2d0f8d1804"
+content-hash = "c89272055fa48708873e5ab2f75999f16f91d1e56c73c58c19fe604b8c910a8d"
