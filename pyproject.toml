@@ -4,14 +4,23 @@ version = "0.1.0"
 description = "GoalBERT: Goal-Directed ColBERT for Iterative Retrieval"
 authors = ["Ben Giacalone <bensgiacalone@gmail.com>"]
 readme = "README.md"
+packages = [{include = "goalbert"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
+torch = {version = "^2.2.1+cu118", source = "pytorch-gpu"}
+numpy = "^1.26.4"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "1.8.0"
 black = "24.2.0"
 pytest = "8.0.1"
+
+
+[[tool.poetry.source]]
+name = "pytorch-gpu"
+url = "https://download.pytorch.org/whl/cu118"
+priority = "explicit"
 
 [build-system]
 requires = ["poetry-core"]
