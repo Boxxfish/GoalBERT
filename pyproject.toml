@@ -7,14 +7,19 @@ readme = "README.md"
 packages = [{include = "goalbert"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.8,<4.0"
 torch = {version = "^2.2.1+cu118", source = "pytorch-gpu"}
-numpy = "^1.26.4"
 tqdm-stubs = "^0.2.1"
 tqdm = "^4.66.2"
 gymnasium = "^0.29.1"
 wandb = "^0.16.4"
 safetensors = "^0.4.2"
+colbert-ai = {path = "ColBERT", develop = true}
+pip = "21.0"
+transformers = "^4.38.2"
+ujson = "^5.9.0"
+numpy = "1.22"
+faiss-gpu = "^1.7.2"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "1.8.0"
