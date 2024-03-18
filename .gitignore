@@ -3,6 +3,9 @@
 
 wandb/
 experiments/
+index/
+nohup.out
+.vscode/
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
