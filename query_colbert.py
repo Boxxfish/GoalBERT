@@ -3,6 +3,7 @@ Directly queries the HoVer index with the query.
 This is more meant for debugging and analysis than for end users.
 """
 from colbert.infra import Run, RunConfig, ColBERTConfig
+from colbert import Searcher
 from tqdm import tqdm
 import ujson
 
@@ -49,7 +50,7 @@ def main():
             ranking = searcher.search(query, k=10)
             doc_ids = ranking[0]
             for doc_id in doc_ids:
-                pid_sid = sid_to_pid_sid[str(doc_id)]
+                pid_sid = tuple(sid_to_pid_sid[str(doc_id)])
                 sent = collectionX.get(pid_sid)
                 print(sent)
 
