@@ -7,6 +7,9 @@ from colbert import Searcher
 from tqdm import tqdm
 import ujson
 
+from goalbert.training.checkpoint import GCheckpoint
+from goalbert.training.goalbert import GoalBERT
+
 def load_collectionX(collection_path, dict_in_dict=False):
     """
     Same exact function as in Baleen, only reimported since Baleen fns don't seem to work.
@@ -44,6 +47,13 @@ def main():
         )
         searcher = Searcher(index="wiki2017.nbits=2", config=config)
         
+        # Replace the checkpoint
+        colbert = searcher.checkpoint
+        goalbert = GCheckpoint(colbert.name, colbert_config=config)
+        goalbert.load_state_dict(colbert.state_dict())
+        searcher.checkpoint = goalbert
+        del colbert
+
         while True:
             query = input("> ")
             print("Searching...")
