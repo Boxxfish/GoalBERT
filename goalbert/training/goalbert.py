@@ -1,6 +1,4 @@
-from colbert.infra.config.config import ColBERTConfig
-from colbert.search.strided_tensor import StridedTensor
-from colbert.modeling.colbert import ColBERT
+from colbert.modeling.colbert import ColBERT, colbert_score
 
 import torch
 class GoalBERT(ColBERT):
@@ -37,21 +35,27 @@ class GoalBERT(ColBERT):
         mask = torch.tensor(self.mask(input_ids, skiplist=[]), device=self.device).unsqueeze(2).float() # Shape: (num_queries, query_maxlen, 1)
         Q = Q * mask
 
-        # For each [MASK], generate a distribution over all non-[MASK] tokens and greedy select
+        # For each [MASK], generate a distribution over all non-[MASK] tokens and greedy select.
+        # Non-[MASK]s include context.
         MASK = 103
         mask_idxs = (input_ids == MASK).int().argmax(1).cpu().tolist() # List of the first [MASK] in each query
         new_Q = []
         for i, mask_idx in enumerate(mask_idxs):
-            non_masks = Q[i, :mask_idx, :] # Shape: (num_non_masks, q_dim)
-            masks = Q[i, mask_idx:, :] # Shape: (num_masks, q_dim)
-            num_masks, q_dim = masks.shape
+            non_masks = torch.concat([Q[i, :mask_idx, :], Q[i, self.colbert_config.query_maxlen:, :]], dim=0) # Shape: (num_non_masks, q_dim)
+            masks = Q[i, mask_idx:self.colbert_config.query_maxlen, :] # Shape: (num_masks, q_dim)
             interaction = masks @ non_masks.T # Shape: (num_masks, num_non_masks)
-            max_select = interaction.argmax(dim=1) # Shape: (num_masks,)
-            new_q = non_masks[max_select] # Shape: (num_masks, q_dim)
+            distr = torch.distributions.Categorical(probs=torch.softmax(interaction, dim=1))
+            # selected = interaction.argmax(dim=1) # Shape: (num_masks,)
+            selected = distr.sample().long() # Shape: (num_masks,)
+            new_q = non_masks[selected] # Shape: (num_masks, q_dim)
             new_Q.append(new_q)
         Q = torch.stack(new_Q, 0) # Shape: (num_queries, num_masks, q_dim)
 
         return torch.nn.functional.normalize(Q, p=2, dim=2)
+
+    def queryFromText(self, queries, context=None):
+        input_ids, attention_mask = self.query_tokenizer.tensorize(queries, context=context)
+        return self.query(input_ids, attention_mask)
 
     def score(self, Q, D_padded, D_mask):
         assert self.colbert_config.similarity == 'cosine'
@@ -60,60 +64,3 @@ class GoalBERT(ColBERT):
     def mask(self, input_ids, skiplist):
         mask = [[(x not in skiplist) and (x != self.pad_token) for x in d] for d in input_ids.cpu().tolist()] # Shape: (num_queries, query_maxlen)
         return mask
-
-
-def colbert_score_reduce(scores_padded, D_mask, config: ColBERTConfig):
-    D_padding = ~D_mask.view(scores_padded.size(0), scores_padded.size(1)).bool()
-    scores_padded[D_padding] = -9999
-    scores = scores_padded.max(1).values
-
-    assert config.interaction == "colbert", config.interaction
-
-    return scores.sum(-1)
-
-
-def colbert_score(Q, D_padded, D_mask, config=ColBERTConfig()):
-    """
-        Supply sizes Q = (1 | num_docs, *, dim) and D = (num_docs, *, dim).
-        If Q.size(0) is 1, the matrix will be compared with all passages.
-        Otherwise, each query matrix will be compared against the *aligned* passage.
-
-        EVENTUALLY: Consider masking with -inf for the maxsim (or enforcing a ReLU).
-    """
-
-    use_gpu = config.total_visible_gpus > 0
-    if use_gpu:
-        Q, D_padded, D_mask = Q.cuda(), D_padded.cuda(), D_mask.cuda()
-
-    assert Q.dim() == 3, Q.size()
-    assert D_padded.dim() == 3, D_padded.size()
-    assert Q.size(0) in [1, D_padded.size(0)]
-
-    scores = D_padded @ Q.to(dtype=D_padded.dtype).permute(0, 2, 1)
-
-    return colbert_score_reduce(scores, D_mask, config)
-
-
-def colbert_score_packed(Q, D_packed, D_lengths, config=ColBERTConfig()):
-    """
-        Works with a single query only.
-    """
-
-    use_gpu = config.total_visible_gpus > 0
-
-    if use_gpu:
-        Q, D_packed, D_lengths = Q.cuda(), D_packed.cuda(), D_lengths.cuda()
-
-    Q = Q.squeeze(0)
-
-    assert Q.dim() == 2, Q.size()
-    assert D_packed.dim() == 2, D_packed.size()
-
-    scores = D_packed @ Q.to(dtype=D_packed.dtype).T
-
-    if use_gpu:
-        scores_padded, scores_mask = StridedTensor(scores, D_lengths, use_gpu=use_gpu).as_padded_tensor()
-
-        return colbert_score_reduce(scores_padded, scores_mask, config)
-    else:
-        return ColBERT.segmented_maxsim(scores, D_lengths)
