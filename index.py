@@ -14,9 +14,7 @@ def main():
             root="./index",
         )
         indexer = Indexer(checkpoint="../colbertv2.0", config=config)
-        indexer.index(
-            name="wiki2017.nbits=2", collection="../fact_collection.tsv"
-        )
+        indexer.index(name="wiki2017.nbits=2", collection="../fact_collection.tsv")
 
 
 if __name__ == "__main__":

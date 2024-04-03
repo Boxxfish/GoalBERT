@@ -26,7 +26,6 @@ DEFAULT_CHUNKSIZE = 25000
 
 
 class IndexUpdater:
-
     """
     IndexUpdater takes in a searcher and adds/remove passages from the searcher.
     A checkpoint for passage-encoding must be provided for adding passages.
@@ -126,16 +125,20 @@ class IndexUpdater:
             end = start + doclen
             codes = compressed_embs.codes[start:end]
             partitions, _ = self._build_passage_partitions(codes)
-            ivf, ivf_lengths = self._add_pid_to_ivf(partitions, curr_pid, ivf, ivf_lengths)
+            ivf, ivf_lengths = self._add_pid_to_ivf(
+                partitions, curr_pid, ivf, ivf_lengths
+            )
 
             start = end
             curr_pid += 1
-        
+
         assert start == sum(doclens)
 
         # Replace the current ivf with new_ivf
         self.curr_ivf = torch.tensor(ivf, dtype=self.curr_ivf.dtype)
-        self.curr_ivf_lengths = torch.tensor(ivf_lengths, dtype=self.curr_ivf_lengths.dtype)
+        self.curr_ivf_lengths = torch.tensor(
+            ivf_lengths, dtype=self.curr_ivf_lengths.dtype
+        )
 
         # Update new ivf in searcher
         new_ivf_tensor = StridedTensor(

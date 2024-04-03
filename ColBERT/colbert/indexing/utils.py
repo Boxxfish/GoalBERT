@@ -5,7 +5,8 @@ import tqdm
 from colbert.indexing.loaders import load_doclens
 from colbert.utils.utils import print_message, flatten
 
-def optimize_ivf(orig_ivf, orig_ivf_lengths, index_path, verbose:int=3):
+
+def optimize_ivf(orig_ivf, orig_ivf_lengths, index_path, verbose: int = 3):
     if verbose > 1:
         print_message("#> Optimizing IVF to store map from centroids to list of pids..")
 
@@ -26,7 +27,7 @@ def optimize_ivf(orig_ivf, orig_ivf_lengths, index_path, verbose:int=3):
 
     offset_doclens = 0
     for pid, dlength in enumerate(all_doclens):
-        emb2pid[offset_doclens: offset_doclens + dlength] = pid
+        emb2pid[offset_doclens : offset_doclens + dlength] = pid
         offset_doclens += dlength
 
     if verbose > 1:
@@ -38,20 +39,21 @@ def optimize_ivf(orig_ivf, orig_ivf_lengths, index_path, verbose:int=3):
 
     offset = 0
     for length in tqdm.tqdm(orig_ivf_lengths.tolist()):
-        pids = torch.unique(ivf[offset:offset+length])
+        pids = torch.unique(ivf[offset : offset + length])
         unique_pids_per_centroid.append(pids)
         ivf_lengths.append(pids.shape[0])
         offset += length
     ivf = torch.cat(unique_pids_per_centroid)
     ivf_lengths = torch.tensor(ivf_lengths)
 
-    original_ivf_path = os.path.join(index_path, 'ivf.pt')
-    optimized_ivf_path = os.path.join(index_path, 'ivf.pid.pt')
+    original_ivf_path = os.path.join(index_path, "ivf.pt")
+    optimized_ivf_path = os.path.join(index_path, "ivf.pid.pt")
     torch.save((ivf, ivf_lengths), optimized_ivf_path)
     if verbose > 1:
         print_message(f"#> Saved optimized IVF to {optimized_ivf_path}")
         if os.path.exists(original_ivf_path):
-            print_message(f"#> Original IVF at path \"{original_ivf_path}\" can now be removed")
+            print_message(
+                f'#> Original IVF at path "{original_ivf_path}" can now be removed'
+            )
 
     return ivf, ivf_lengths
-
