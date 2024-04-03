@@ -1,5 +1,5 @@
 import copy
-from typing import Tuple
+from typing import *
 
 import torch
 from torch import nn

@@ -3,7 +3,7 @@ A rollout buffer for use with on-policy algorithms. Unlike a replay buffer,
 rollouts only store experience collected under a single policy.
 """
 
-from typing import List, Optional, Tuple
+from typing import *
 
 import torch
 from torch import nn
@@ -101,7 +101,7 @@ class RolloutBuffer:
 
     def samples(
         self, batch_size: int, discount: float, lambda_: float, v_net: nn.Module
-    ) -> list[
+    ) -> List[
         Tuple[
             torch.Tensor,
             torch.Tensor,
