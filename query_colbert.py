@@ -67,12 +67,13 @@ def main():
         while True:
             query = input("> ")
             context = []
+            idxs = [[2, 2, 2, 2, 2, 2]]
             print("Searching...")
             for i in range(args.hops):
                 print("Hop", i + 1)
                 print("Context:", context)
                 ranking = searcher.search(
-                    query, context=(" [SEP] ".join(context)) if context else None, k=10
+                    query, context=(" [SEP] ".join(context)) if context else None, k=10, idxs=idxs
                 )
                 doc_ids = ranking[0]
                 for doc_id in doc_ids:

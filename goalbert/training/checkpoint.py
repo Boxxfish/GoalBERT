@@ -41,7 +41,7 @@ class GCheckpoint(GoalBERT):
                 return D
 
     def queryFromText(
-        self, queries, bsize=None, to_cpu=False, context=None, full_length_search=False
+        self, queries, bsize=None, to_cpu=False, context=None, full_length_search=False, idxs=None,
     ):
         """
         Exactly the same as the original Checkpoint method.
@@ -54,7 +54,7 @@ class GCheckpoint(GoalBERT):
                 full_length_search=full_length_search,
             )
             batches = [
-                self.query(input_ids, attention_mask, to_cpu=to_cpu)
+                self.query(input_ids, attention_mask, to_cpu=to_cpu, idxs=idxs)
                 for input_ids, attention_mask in batches
             ]
             return torch.cat(batches)
@@ -62,7 +62,7 @@ class GCheckpoint(GoalBERT):
         input_ids, attention_mask = self.query_tokenizer.tensorize(
             queries, context=context, full_length_search=full_length_search
         )
-        return self.query(input_ids, attention_mask)
+        return self.query(input_ids, attention_mask, idxs=idxs)
 
     def docFromText(
         self,
