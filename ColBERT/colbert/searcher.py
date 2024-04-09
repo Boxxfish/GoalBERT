@@ -65,7 +65,7 @@ class Searcher:
     def configure(self, **kw_args):
         self.config.configure(**kw_args)
 
-    def encode(self, text: TextQueries, full_length_search=False, context=None):
+    def encode(self, text: TextQueries, full_length_search=False, context=None, idxs=None):
         queries, context = (
             (text, context) if type(text) is list else ([text], [context])
         )
@@ -78,6 +78,7 @@ class Searcher:
         Q = self.checkpoint.queryFromText(
             queries,
             context=context,
+            idxs=idxs,
             bsize=bsize,
             to_cpu=True,
             full_length_search=full_length_search,
@@ -93,8 +94,9 @@ class Searcher:
         full_length_search=False,
         pids=None,
         context=None,
+        idxs=None,
     ):
-        Q = self.encode(text, context=context, full_length_search=full_length_search)
+        Q = self.encode(text, context=context, idxs=idxs, full_length_search=full_length_search)
         return self.dense_search(Q, k, filter_fn=filter_fn, pids=pids)
 
     def search_all(

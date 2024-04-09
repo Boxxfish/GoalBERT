@@ -43,7 +43,7 @@ class Checkpoint(ColBERT):
                 return D
 
     def queryFromText(
-        self, queries, bsize=None, to_cpu=False, context=None, full_length_search=False
+        self, queries, bsize=None, to_cpu=False, context=None, idxs=None, full_length_search=False
     ):
         if bsize:
             batches = self.query_tokenizer.tensorize(
@@ -61,7 +61,7 @@ class Checkpoint(ColBERT):
         input_ids, attention_mask = self.query_tokenizer.tensorize(
             queries, context=context, full_length_search=full_length_search
         )
-        return self.query(input_ids, attention_mask)
+        return self.query(input_ids, attention_mask, idxs)
 
     def docFromText(
         self,
