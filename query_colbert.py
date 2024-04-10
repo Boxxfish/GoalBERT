@@ -67,15 +67,19 @@ def main():
         while True:
             query = input("> ")
             context = []
-            idxs = [[2, 2, 2, 2, 2, 2]]
             print("Searching...")
             for i in range(args.hops):
                 print("Hop", i + 1)
                 print("Context:", context)
-                ranking = searcher.search(
-                    query, context=(" [SEP] ".join(context)) if context else None, k=10, idxs=idxs
+                context_processed = (" [SEP] ".join(context)) if context else None
+                act_distrs, _ = searcher.act_distrs(
+                    query,
+                    context=context_processed,
                 )
+                idxs = [distr.sample().long() for distr in act_distrs]
+                ranking = searcher.search(query, k=10, context=context_processed, idxs=idxs)
                 doc_ids = ranking[0]
+                print("Indices:", idxs)
                 for doc_id in doc_ids:
                     pid_sid = tuple(sid_to_pid_sid[str(doc_id)])
                     sent = collectionX.get(pid_sid)

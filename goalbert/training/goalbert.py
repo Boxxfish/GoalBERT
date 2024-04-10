@@ -25,7 +25,9 @@ class GoalBERT(ColBERT):
     def compute_ib_loss(self, Q, D, D_mask):
         assert False, "Don't use this method."
 
-    def act_distrs(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> Tuple[List[torch.distributions.Categorical], List[torch.Tensor]]:
+    def act_distrs(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
+    ) -> Tuple[List[torch.distributions.Categorical], List[torch.Tensor]]:
         """
         Returns distributions over the query and context for each [MASK] token present in each query.
         Also returns a list of non-MASKs.
@@ -67,12 +69,12 @@ class GoalBERT(ColBERT):
             non_masks_all.append(non_masks)
         return distrs, non_masks_all
 
-
-    def query(self,
-            input_ids, # Shape: (num_queries, query_maxlen)
-            attention_mask,
-            idxs=None # Shape: (num_queries, num_masks)
-        ):
+    def query(
+        self,
+        input_ids,  # Shape: (num_queries, query_maxlen)
+        attention_mask,
+        idxs=None,  # Shape: (num_queries, num_masks)
+    ):
         new_Q = []
         distrs, non_masks_all = self.act_distrs(input_ids, attention_mask)
         for i, (distr, non_masks) in enumerate(zip(distrs, non_masks_all)):

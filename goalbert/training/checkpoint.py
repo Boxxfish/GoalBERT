@@ -1,3 +1,4 @@
+from typing import *
 import torch
 
 from tqdm import tqdm
@@ -40,8 +41,27 @@ class GCheckpoint(GoalBERT):
 
                 return D
 
+    def act_distrs_from_text(
+        self,
+        queries,
+        context=None,
+        bsize=None,
+        to_cpu=False,
+        full_length_search=False,
+    ) -> Tuple[List[torch.distributions.Categorical], List[torch.Tensor]]:
+        input_ids, attention_mask = self.query_tokenizer.tensorize(
+            queries, context=context, full_length_search=full_length_search
+        )
+        return self.act_distrs(input_ids, attention_mask)
+
     def queryFromText(
-        self, queries, bsize=None, to_cpu=False, context=None, full_length_search=False, idxs=None,
+        self,
+        queries,
+        bsize=None,
+        to_cpu=False,
+        context=None,
+        full_length_search=False,
+        idxs=None,
     ):
         """
         Exactly the same as the original Checkpoint method.

@@ -6,7 +6,8 @@ from typing import Union
 
 from colbert.data import Collection, Queries, Ranking
 
-from colbert.modeling.checkpoint import Checkpoint
+from colbert.modeling.checkpoint import Checkpoint as CCheckpoint
+from goalbert.training.checkpoint import GCheckpoint
 from colbert.search.index_storage import IndexScorer
 
 from colbert.infra.provenance import Provenance
@@ -14,9 +15,9 @@ from colbert.infra.run import Run
 from colbert.infra.config import ColBERTConfig, RunConfig
 from colbert.infra.launcher import print_memory_stats
 
-import time
+from typing import Sequence, Tuple, Dict, List
 
-TextQueries = Union[str, "list[str]", "dict[int, str]", Queries]
+TextQueries = Union[str, Sequence[str], Dict[int, str], Queries]
 
 
 class Searcher:
@@ -40,7 +41,7 @@ class Searcher:
         self.index = os.path.join(index_root, index)
         self.index_config = ColBERTConfig.load_from_index(self.index)
 
-        self.checkpoint = checkpoint or self.index_config.checkpoint
+        self.checkpoint: Union[CCheckpoint, GCheckpoint] = checkpoint or self.index_config.checkpoint
         self.checkpoint_config = ColBERTConfig.load_from_checkpoint(self.checkpoint)
         self.config = ColBERTConfig.from_existing(
             self.checkpoint_config, self.index_config, initial_config
@@ -49,7 +50,7 @@ class Searcher:
         self.collection = Collection.cast(collection or self.config.collection)
         self.configure(checkpoint=self.checkpoint, collection=self.collection)
 
-        self.checkpoint = Checkpoint(
+        self.checkpoint = CCheckpoint(
             self.checkpoint, colbert_config=self.config, verbose=self.verbose
         )
         use_gpu = self.config.total_visible_gpus > 0
@@ -66,12 +67,12 @@ class Searcher:
         self.config.configure(**kw_args)
 
     def encode(self, text: TextQueries, full_length_search=False, context=None, idxs=None):
-        queries, context = (
-            (text, context) if type(text) is list else ([text], [context])
-        )
+        if not isinstance(text, list):
+            queries, context = ([text], [context])
+        else:
+            queries, context = (text, context)
         if context in ([], [[]], [None]):
             context = None
-        print(context)
         bsize = 128 if len(queries) > 128 else None
 
         self.checkpoint.query_tokenizer.query_maxlen = self.config.query_maxlen
@@ -86,6 +87,29 @@ class Searcher:
 
         return Q
 
+    def act_distrs(
+        self,
+        text: str,
+        full_length_search=False,
+        context=None,
+    ) -> Tuple[List[torch.distributions.Categorical], List[torch.Tensor]]:
+        queries, context = (
+            (text, context) if type(text) is list else ([text], [context])
+        )
+        if context in ([], [[]], [None]):
+            context = None
+        bsize = 128 if len(queries) > 128 else None
+
+        self.checkpoint.query_tokenizer.query_maxlen = self.config.query_maxlen
+        assert isinstance(self.checkpoint, GCheckpoint)
+        return self.checkpoint.act_distrs_from_text(
+            queries,
+            context=context,
+            bsize=bsize,
+            to_cpu=True,
+            full_length_search=full_length_search,
+        )
+    
     def search(
         self,
         text: str,
@@ -107,13 +131,13 @@ class Searcher:
         full_length_search=False,
         qid_to_pids=None,
     ):
-        queries = Queries.cast(queries)
-        queries_ = list(queries.values())
+        queries_ = Queries.cast(queries)
+        q_list = list(queries_.values())
 
-        Q = self.encode(queries_, full_length_search=full_length_search)
+        Q = self.encode(q_list, full_length_search=full_length_search)
 
         return self._search_all_Q(
-            queries, Q, k, filter_fn=filter_fn, qid_to_pids=qid_to_pids
+            queries_, Q, k, filter_fn=filter_fn, qid_to_pids=qid_to_pids
         )
 
     def _search_all_Q(self, queries, Q, k, filter_fn=None, qid_to_pids=None):
