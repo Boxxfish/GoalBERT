@@ -7,7 +7,10 @@ import random
 
 import torch
 
+from colbert.infra.config.config import ColBERTConfig, RunConfig
+from colbert.infra.run import Run
 from colbert.searcher import Searcher
+from goalbert.training.checkpoint import GCheckpoint
 from goalbert.training.goalbert import GoalBERT
 from query_colbert import load_collectionX
 
@@ -17,7 +20,7 @@ class QA:
     qid: int
     question: str
     support_pids: List[str]
-    support_facts: List[List[int]]  # List of [pid, sid]s
+    support_facts: List[List[str]]  # List of [pid, sid]s
     support_titles: List[str]
     num_hops: int
     label: int  # 1 if supported, 0 if unsupported
@@ -35,7 +38,7 @@ class FactIndex:
         self.collectionX = load_collectionX(collection_path)
 
     def get_fact_str(self, fact_id: int) -> str:
-        pid_sid = tuple(self.sid_to_pid_sid[fact_id])
+        pid_sid = tuple(self.sid_to_pid_sid[str(fact_id)])
         return self.collectionX.get(pid_sid)
 
     def from_pid_sid_to_fact_id(self, pid_sid: Tuple[int, int]) -> int:
@@ -100,7 +103,7 @@ class GoalBERTEnv(gym.Env):
         ranking = self.shared.searcher.search(
             query,
             context=(" [SEP] ".join(self.context)) if self.context else None,
-            indices=action,
+            idxs=[action],
             k=self.reward_depth,
         )
         doc_ids: List[int] = ranking[0]
@@ -116,6 +119,9 @@ class GoalBERTEnv(gym.Env):
             if closest_rank is None
             else ((self.reward_depth - closest_rank) / self.reward_depth)
         )
+        print("Doc IDS:", doc_ids)
+        print("Fact Indices:", self.support_facts)
+        print("Ranks:", ranks)
 
         # Greedily select fact
         fact_idx = doc_ids[0]
@@ -135,7 +141,42 @@ class GoalBERTEnv(gym.Env):
         self.context = []
         self.seen_facts = set()
         self.support_facts = [
-            self.shared.fact_index.from_pid_sid_to_fact_id(tuple(pid_qid))
+            int(self.shared.fact_index.from_pid_sid_to_fact_id(tuple(pid_qid)))
             for pid_qid in self.qa.support_facts
         ]
         return (self.qa.question, None), {}
+
+
+# Testing the environment
+def test():
+    # Initialize environment
+    fact_index = FactIndex(
+        "../sid_to_pid_sid.json", "../wiki.abstracts.2017/collection.json"
+    )
+    q_index = QuestionIndex("../hover/train/qas.json")
+    with Run().context(RunConfig(nranks=1, experiment="wiki2017")):
+        config = ColBERTConfig(
+            root="./index",
+            query_maxlen=64,
+        )
+        searcher = Searcher(index="wiki2017.nbits=2", config=config)
+        colbert = searcher.checkpoint
+        goalbert = GCheckpoint(colbert.name, colbert_config=config)
+        goalbert.load_state_dict(colbert.state_dict())
+        searcher.checkpoint = goalbert
+        del colbert
+    shared = SharedResources(searcher, fact_index, q_index)
+    env = GoalBERTEnv(goalbert, shared, n_hops=4, reward_depth=100)
+
+    obs, _ = env.reset()
+    for i in range(10):
+        action_distr = searcher.act_distrs(obs[0], context=(" [SEP] ".join(obs[1])) if obs[1] else None)[0][0]
+        actions = action_distr.sample().tolist()
+        obs, reward, done, trunc, _ = env.step(actions)
+        print("Step:", i)
+        print("Query:", obs[0])
+        print("Context:", obs[1])
+        print("Reward:", reward)
+        print("Done:", reward)
+        if done or trunc:
+            obs, _ = env.reset()

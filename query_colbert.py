@@ -77,7 +77,9 @@ def main():
                     context=context_processed,
                 )
                 idxs = [distr.sample().long() for distr in act_distrs]
-                ranking = searcher.search(query, k=10, context=context_processed, idxs=idxs)
+                ranking = searcher.search(
+                    query, k=10, context=context_processed, idxs=idxs
+                )
                 doc_ids = ranking[0]
                 print("Indices:", idxs)
                 for doc_id in doc_ids:
