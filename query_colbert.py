@@ -10,6 +10,7 @@ from tqdm import tqdm
 import ujson  # type: ignore
 
 from goalbert.training.checkpoint import GCheckpoint
+from goalbert.training.goalbert import probs_act_masks_to_distrs
 
 
 def load_collectionX(collection_path, dict_in_dict=False):
@@ -72,11 +73,12 @@ def main():
                 print("Hop", i + 1)
                 print("Context:", context)
                 context_processed = (" [SEP] ".join(context)) if context else None
-                act_distrs, _ = searcher.act_distrs(
+                probs_all, act_masks_all, _ = searcher.compute_probs(
                     query,
                     context=context_processed,
                 )
-                idxs = [distr.sample().long() for distr in act_distrs]
+                action_distrs = probs_act_masks_to_distrs(probs_all, act_masks_all)
+                idxs = [distr.sample().long() for distr in action_distrs]
                 ranking = searcher.search(
                     query, k=10, context=context_processed, idxs=idxs
                 )

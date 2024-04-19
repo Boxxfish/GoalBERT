@@ -87,12 +87,12 @@ class Searcher:
 
         return Q
 
-    def act_distrs(
+    def compute_probs(
         self,
         text: str,
         full_length_search=False,
         context=None,
-    ) -> Tuple[List[torch.distributions.Categorical], List[torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         queries, context = (
             (text, context) if type(text) is list else ([text], [context])
         )
@@ -102,7 +102,7 @@ class Searcher:
 
         self.checkpoint.query_tokenizer.query_maxlen = self.config.query_maxlen
         assert isinstance(self.checkpoint, GCheckpoint)
-        return self.checkpoint.act_distrs_from_text(
+        return self.checkpoint.compute_probs_from_text(
             queries,
             context=context,
             bsize=bsize,

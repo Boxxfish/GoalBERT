@@ -6,11 +6,12 @@ from torch import nn
 from torch.distributions import Categorical
 from tqdm import tqdm
 
+from goalbert.training.goalbert import GoalBERT
 from goalbert.training.rollout_buffer import RolloutBuffer
 
 
 def train_ppo(
-    p_net: nn.Module,
+    p_net: GoalBERT,
     v_net: nn.Module,
     p_opt: torch.optim.Optimizer,
     v_opt: torch.optim.Optimizer,
@@ -22,7 +23,6 @@ def train_ppo(
     lambda_: float,
     epsilon: float,
     gradient_steps: int = 1,
-    use_masks: bool = False,
 ) -> Tuple[float, float]:
     """
     Performs the PPO training loop. Returns a tuple of total policy loss and
@@ -31,7 +31,6 @@ def train_ppo(
     Args:
         gradient_steps: Number of batches to step through before before
         adjusting weights.
-        use_masks: If True, masks are passed to the model.
     """
     p_net.train()
     v_net_frozen = copy.deepcopy(v_net)
@@ -50,25 +49,38 @@ def train_ppo(
         batches = buffer.samples(train_batch_size, discount, lambda_, v_net_frozen)
         for (
             i,
-            (prev_states, actions, action_probs, returns, advantages, action_masks),
+            (
+                prev_input_ids,
+                prev_attn_masks,
+                actions,
+                action_probs,
+                returns,
+                advantages,
+                action_masks,
+            ),
         ) in enumerate(batches):
             # Move batch to device if applicable
-            prev_states = prev_states.to(device=device)
+            prev_input_ids = prev_input_ids.to(device=device)
+            prev_attn_masks = prev_attn_masks.to(device=device)
             actions = actions.to(device=device)
             action_probs = action_probs.to(device=device)
             returns = returns.to(device=device)
             advantages = advantages.to(device=device)
             action_masks = action_masks.to(device=device)
 
+            # Perform action masking
+            action_probs[action_masks] = -torch.inf
+
             # Train policy network
             with torch.no_grad():
                 old_act_probs = Categorical(logits=action_probs).log_prob(
                     actions.squeeze()
                 )
-            if use_masks:
-                new_log_probs = p_net(prev_states, action_masks)
-            else:
-                new_log_probs = p_net(prev_states)
+            # TODO: Add log probs across each action
+            new_log_probs = [
+                probs_all.log()
+                for (probs_all, act_masks_all, _) in p_net.compute_probs(prev_input_ids, prev_attn_masks)
+            ]
             new_act_probs = Categorical(logits=new_log_probs).log_prob(
                 actions.squeeze()
             )
@@ -79,7 +91,7 @@ def train_ppo(
             total_p_loss += p_loss.item()
 
             # Train value network
-            diff = v_net(prev_states) - returns
+            diff = v_net(prev_input_ids, prev_attn_masks) - returns
             v_loss = (diff * diff).mean() / gradient_steps
             v_loss.backward()
             total_v_loss += v_loss.item()

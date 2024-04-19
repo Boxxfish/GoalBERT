@@ -11,7 +11,7 @@ from colbert.infra.config.config import ColBERTConfig, RunConfig
 from colbert.infra.run import Run
 from colbert.searcher import Searcher
 from goalbert.training.checkpoint import GCheckpoint
-from goalbert.training.goalbert import GoalBERT
+from goalbert.training.goalbert import MAX_ACTIONS, MAX_MASKS, GoalBERT, probs_act_masks_to_distrs
 from query_colbert import load_collectionX
 
 
@@ -43,6 +43,12 @@ class FactIndex:
 
     def from_pid_sid_to_fact_id(self, pid_sid: Tuple[int, int]) -> int:
         return self.pid_sid_to_sid[pid_sid]
+    
+    def valid_pid_sid(self, pid_sid: Tuple[int, int]) -> bool:
+        """
+        Checks if this exists, needed since the dataset sometimes requests nonexistent ones.
+        """
+        return pid_sid in self.pid_sid_to_sid
 
 
 class QuestionIndex:
@@ -91,6 +97,8 @@ class GoalBERTEnv(gym.Env):
         self.qa = None
         self.support_facts = []
         self.reward_depth = reward_depth
+        self.observation_space = gym.spaces.Tuple([gym.spaces.Text(64), gym.spaces.Sequence(gym.spaces.Text(MAX_ACTIONS))])
+        self.action_space = gym.spaces.MultiDiscrete([MAX_MASKS, MAX_ACTIONS])
 
     @torch.no_grad()
     def step(
@@ -102,7 +110,7 @@ class GoalBERTEnv(gym.Env):
         query = self.qa.question
         ranking = self.shared.searcher.search(
             query,
-            context=(" [SEP] ".join(self.context)) if self.context else None,
+            context=fmt_context(self.context),
             idxs=[action],
             k=self.reward_depth,
         )
@@ -119,14 +127,12 @@ class GoalBERTEnv(gym.Env):
             if closest_rank is None
             else ((self.reward_depth - closest_rank) / self.reward_depth)
         )
-        print("Doc IDS:", doc_ids)
-        print("Fact Indices:", self.support_facts)
-        print("Ranks:", ranks)
 
         # Greedily select fact
         fact_idx = doc_ids[0]
         self.context.append(self.shared.fact_index.get_fact_str(fact_idx))
-        self.seen_facts.add(fact_idx)
+        if closest_rank is not None and closest_rank < 10:
+            self.seen_facts.add(fact_idx)
 
         self.hops += 1
         done = self.hops == self.n_hops
@@ -138,6 +144,11 @@ class GoalBERTEnv(gym.Env):
             random.seed(seed)
         self.hops = 0
         self.qa = self.shared.q_index.random()
+        while not all([
+            self.shared.fact_index.valid_pid_sid(tuple(pid_qid))
+            for pid_qid in self.qa.support_facts
+        ]):
+            self.qa = self.shared.q_index.random()
         self.context = []
         self.seen_facts = set()
         self.support_facts = [
@@ -145,6 +156,13 @@ class GoalBERTEnv(gym.Env):
             for pid_qid in self.qa.support_facts
         ]
         return (self.qa.question, None), {}
+
+
+def fmt_context(ctx: List[str]) -> Optional[str]:
+    """
+    Formats a list of facts into the expected format.
+    """
+    return (" [SEP] ".join(ctx)) if ctx else None
 
 
 # Testing the environment
@@ -170,7 +188,8 @@ def test():
 
     obs, _ = env.reset()
     for i in range(10):
-        action_distr = searcher.act_distrs(obs[0], context=(" [SEP] ".join(obs[1])) if obs[1] else None)[0][0]
+        probs_all, act_masks_all, _ = searcher.compute_probs(obs[0], context=fmt_context(obs[1]))
+        action_distr = probs_act_masks_to_distrs(probs_all, act_masks_all)[0]
         actions = action_distr.sample().tolist()
         obs, reward, done, trunc, _ = env.step(actions)
         print("Step:", i)

@@ -41,18 +41,18 @@ class GCheckpoint(GoalBERT):
 
                 return D
 
-    def act_distrs_from_text(
+    def compute_probs_from_text(
         self,
         queries,
         context=None,
         bsize=None,
         to_cpu=False,
         full_length_search=False,
-    ) -> Tuple[List[torch.distributions.Categorical], List[torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         input_ids, attention_mask = self.query_tokenizer.tensorize(
             queries, context=context, full_length_search=full_length_search
         )
-        return self.act_distrs(input_ids, attention_mask)
+        return self.compute_probs(input_ids, attention_mask)
 
     def queryFromText(
         self,

@@ -3,8 +3,11 @@ Configuration classes.
 """
 
 from argparse import ArgumentParser
+from typing_extensions import Self
 import torch
 from typing import *
+
+from goalbert.training.goalbert import MAX_ACTIONS
 
 
 class BaseConfig:
@@ -47,7 +50,7 @@ class BaseConfig:
                     return True
         return False
 
-    def flat_dict(self) -> dict[str, Any]:
+    def flat_dict(self) -> Dict[str, Any]:
         """
         Returns a flat dict of all config options.
         """
@@ -90,6 +93,7 @@ class TrainingConfig(BaseConfig):
     v_lr: float = 0.001  # Learning rate of the value net.
     p_lr: float = 0.0001  # Learning rate of the policy net.
     gradient_steps: int = 1  # Number of gradient steps before optimizing.
+    max_input_ids: int = MAX_ACTIONS  # Maxmimum # of input IDs.
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
