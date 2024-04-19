@@ -11,7 +11,12 @@ from colbert.infra.config.config import ColBERTConfig, RunConfig
 from colbert.infra.run import Run
 from colbert.searcher import Searcher
 from goalbert.training.checkpoint import GCheckpoint
-from goalbert.training.goalbert import MAX_ACTIONS, MAX_MASKS, GoalBERT, probs_act_masks_to_distrs
+from goalbert.training.goalbert import (
+    MAX_ACTIONS,
+    MAX_MASKS,
+    GoalBERT,
+    probs_act_masks_to_distrs,
+)
 from query_colbert import load_collectionX
 
 
@@ -43,7 +48,7 @@ class FactIndex:
 
     def from_pid_sid_to_fact_id(self, pid_sid: Tuple[int, int]) -> int:
         return self.pid_sid_to_sid[pid_sid]
-    
+
     def valid_pid_sid(self, pid_sid: Tuple[int, int]) -> bool:
         """
         Checks if this exists, needed since the dataset sometimes requests nonexistent ones.
@@ -97,7 +102,9 @@ class GoalBERTEnv(gym.Env):
         self.qa = None
         self.support_facts = []
         self.reward_depth = reward_depth
-        self.observation_space = gym.spaces.Tuple([gym.spaces.Text(64), gym.spaces.Sequence(gym.spaces.Text(MAX_ACTIONS))])
+        self.observation_space = gym.spaces.Tuple(
+            [gym.spaces.Text(64), gym.spaces.Sequence(gym.spaces.Text(MAX_ACTIONS))]
+        )
         self.action_space = gym.spaces.MultiDiscrete([MAX_MASKS, MAX_ACTIONS])
 
     @torch.no_grad()
@@ -144,11 +151,24 @@ class GoalBERTEnv(gym.Env):
             random.seed(seed)
         self.hops = 0
         self.qa = self.shared.q_index.random()
-        while not all([
-            self.shared.fact_index.valid_pid_sid(tuple(pid_qid))
-            for pid_qid in self.qa.support_facts
-        ]):
+        _, attention_mask = self.shared.searcher.checkpoint.query_tokenizer.tensorize(
+            [self.qa.question]
+        )
+
+        # Ensure we can retrieve all of our facts and that the query < (query maxlen - 4)
+        while not all(
+            [
+                self.shared.fact_index.valid_pid_sid(tuple(pid_qid))
+                for pid_qid in self.qa.support_facts
+            ]
+        ) or (attention_mask.sum().item() >= MAX_MASKS - 4):
             self.qa = self.shared.q_index.random()
+            _, attention_mask = (
+                self.shared.searcher.checkpoint.query_tokenizer.tensorize(
+                    [self.qa.question]
+                )
+            )
+
         self.context = []
         self.seen_facts = set()
         self.support_facts = [
@@ -188,7 +208,9 @@ def test():
 
     obs, _ = env.reset()
     for i in range(10):
-        probs_all, act_masks_all, _ = searcher.compute_probs(obs[0], context=fmt_context(obs[1]))
+        probs_all, act_masks_all, _ = searcher.compute_probs(
+            obs[0], context=fmt_context(obs[1])
+        )
         action_distr = probs_act_masks_to_distrs(probs_all, act_masks_all)[0]
         actions = action_distr.sample().tolist()
         obs, reward, done, trunc, _ = env.step(actions)

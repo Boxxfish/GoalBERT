@@ -75,7 +75,10 @@ def main():
         del colbert
     shared = SharedResources(searcher, fact_index, q_index)
     env = gym.vector.SyncVectorEnv(
-        [lambda: GoalBERTEnv(goalbert, shared=shared) for _ in range(config.training.num_envs)]
+        [
+            lambda: GoalBERTEnv(goalbert, shared=shared)
+            for _ in range(config.training.num_envs)
+        ]
     )
     test_env = GoalBERTEnv(goalbert, shared=shared)
 
@@ -117,28 +120,35 @@ def main():
                 range(config.training.train_steps), position=1, desc=f"Iter {iter_idx}"
             ):
                 probs_all, act_masks_all, _ = searcher.compute_probs(
-                    list(obs[0]), context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]]
+                    list(obs[0]),
+                    context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]],
                 )
-                print(obs[0])
-                print(obs[1])
                 action_distrs = probs_act_masks_to_distrs(probs_all, act_masks_all)
                 input_ids, attention_mask = goalbert.query_tokenizer.tensorize(
-                    list(obs[0]), context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]]
+                    list(obs[0]),
+                    context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]],
                 )
-                actions = [action_distr.sample().cpu().tolist() for action_distr in action_distrs]
-                print(actions)
+                actions = [
+                    action_distr.sample().cpu().tolist()
+                    for action_distr in action_distrs
+                ]
+                for i, a in enumerate(actions):
+                    if len(a) == 0:
+                        print(obs[0][i])
                 obs_, rewards, dones, truncs, _ = env.step(actions)
-                
-                input_ids_padded = torch.zeros((MAX_MASKS, config.max_input_ids))
-                input_ids_padded[:, :input_ids.shape[1]] = input_ids
-                
-                attn_masks_padded = torch.zeros((MAX_MASKS, config.max_input_ids))
-                attn_masks_padded[:, :attention_mask.shape[1]] = attention_mask
+
+                input_ids_padded = torch.zeros((MAX_MASKS, config.training.max_input_ids))
+                input_ids_padded[:, : input_ids.shape[1]] = input_ids
+
+                attn_masks_padded = torch.zeros((MAX_MASKS, config.training.max_input_ids))
+                attn_masks_padded[:, : attention_mask.shape[1]] = attention_mask
 
                 buffer.insert_step(
                     input_ids_padded,
                     attn_masks_padded,
-                    torch.tensor([q_acts + [0] * (MAX_MASKS - len(q_acts)) for q_acts in actions]),
+                    torch.tensor(
+                        [q_acts + [0] * (MAX_MASKS - len(q_acts)) for q_acts in actions]
+                    ),
                     probs_all,
                     rewards,
                     dones,
@@ -147,13 +157,14 @@ def main():
                 obs = obs_
                 total_train_reward += float(rewards.sum())
             input_ids, attention_mask = goalbert.query_tokenizer.tensorize(
-                list(obs[0]), context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]]
+                list(obs[0]),
+                context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]],
             )
-            input_ids_padded = torch.zeros((MAX_MASKS, config.max_input_ids))
-            input_ids_padded[:, :input_ids.shape[1]] = input_ids
-            
-            attn_masks_padded = torch.zeros((MAX_MASKS, config.max_input_ids))
-            attn_masks_padded[:, :attention_mask.shape[1]] = attention_mask
+            input_ids_padded = torch.zeros((MAX_MASKS, config.training.max_input_ids))
+            input_ids_padded[:, : input_ids.shape[1]] = input_ids
+
+            attn_masks_padded = torch.zeros((MAX_MASKS, config.training.max_input_ids))
+            attn_masks_padded[:, : attention_mask.shape[1]] = attention_mask
             buffer.insert_final_step(input_ids_padded, attn_masks_padded)
 
         # Train

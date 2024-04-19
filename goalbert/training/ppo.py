@@ -79,7 +79,9 @@ def train_ppo(
             # TODO: Add log probs across each action
             new_log_probs = [
                 probs_all.log()
-                for (probs_all, act_masks_all, _) in p_net.compute_probs(prev_input_ids, prev_attn_masks)
+                for (probs_all, act_masks_all, _) in p_net.compute_probs(
+                    prev_input_ids, prev_attn_masks
+                )
             ]
             new_act_probs = Categorical(logits=new_log_probs).log_prob(
                 actions.squeeze()
