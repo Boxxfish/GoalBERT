@@ -67,7 +67,7 @@ class RolloutBuffer:
         rewards: List[float],
         dones: List[bool],
         truncs: List[bool],
-        masks: Optional[List[int]] = None,
+        masks: torch.Tensor,
     ):
         """
         Inserts a transition from each environment into the buffer. Make sure
@@ -90,10 +90,7 @@ class RolloutBuffer:
             self.truncs[self.next].copy_(
                 torch.tensor(truncs, dtype=torch.float, device=d)
             )
-            if masks:
-                self.masks[self.next].copy_(
-                    torch.tensor(masks, dtype=torch.bool, device=d)
-                )
+            self.masks[self.next].copy_(masks)
 
         self.next += 1
 
@@ -124,7 +121,7 @@ class RolloutBuffer:
         advantages, and dones.
         """
         with torch.no_grad():
-            d = torch.device("cpu")
+            d = torch.device("cuda:1")
             returns = torch.zeros(
                 [self.num_steps, self.num_envs], dtype=torch.float, device=d
             )
@@ -132,18 +129,18 @@ class RolloutBuffer:
                 [self.num_steps, self.num_envs], dtype=torch.float, device=d
             )
             step_returns: torch.Tensor = v_net(
-                self.input_ids[self.next], self.attn_masks[self.next]
+                self.input_ids[self.next].to(d), self.attn_masks[self.next].to(d)
             ).squeeze()
 
             # Calculate advantage estimates and rewards to go
             state_values = step_returns.clone()
             step_advantages = torch.zeros([self.num_envs], dtype=torch.float, device=d)
             for i in reversed(range(self.num_steps)):
-                prev_input_ids = self.input_ids[i]
-                prev_attn_masks = self.attn_masks[i]
-                rewards = self.rewards[i]
-                inv_dones = 1.0 - self.dones[i]
-                inv_truncs = 1.0 - self.truncs[i]
+                prev_input_ids = self.input_ids[i].to(d)
+                prev_attn_masks = self.attn_masks[i].to(d)
+                rewards = self.rewards[i].to(d)
+                inv_dones = 1.0 - self.dones[i].to(d)
+                inv_truncs = 1.0 - self.truncs[i].to(d)
                 prev_state_values: torch.Tensor = v_net(
                     prev_input_ids, prev_attn_masks
                 ).squeeze()
@@ -164,16 +161,16 @@ class RolloutBuffer:
 
             # Permute transitions to decorrelate them
             exp_count = self.num_envs * self.num_steps
-            indices = torch.randperm(exp_count, dtype=torch.int, device=d)
-            rand_prev_input_ids = self.input_ids.flatten(0, 1).index_select(0, indices)
+            indices = torch.randperm(exp_count, dtype=torch.int)
+            rand_prev_input_ids = self.input_ids.flatten(0, 1).index_select(0, indices).to(d)
             rand_prev_attn_masks = self.attn_masks.flatten(0, 1).index_select(
                 0, indices
-            )
-            rand_actions = self.actions.flatten(0, 1).index_select(0, indices)
-            rand_action_probs = self.action_probs.flatten(0, 1).index_select(0, indices)
-            rand_masks = self.masks.flatten(0, 1).index_select(0, indices)
-            rand_returns = returns.flatten(0, 1).index_select(0, indices)
-            rand_advantages = advantages.flatten(0, 1).index_select(0, indices)
+            ).to(d)
+            rand_actions = self.actions.flatten(0, 1).index_select(0, indices).to(d)
+            rand_action_probs = self.action_probs.flatten(0, 1).index_select(0, indices).to(d)
+            rand_masks = self.masks.flatten(0, 1).index_select(0, indices).to(d)
+            rand_returns = returns.flatten(0, 1).index_select(0, indices.to(d))
+            rand_advantages = advantages.flatten(0, 1).index_select(0, indices.to(d))
             batch_count = exp_count // batch_size
             batches = []
             for i in range(batch_count):

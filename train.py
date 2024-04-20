@@ -80,6 +80,7 @@ def main():
     test_env = GoalBERTEnv(goalbert, shared=shared)
 
     v_net = ValueNet()
+    v_net.to("cuda:1")
     v_opt = torch.optim.Adam(v_net.parameters(), lr=config.training.v_lr)
     p_opt = torch.optim.Adam(goalbert.parameters(), lr=config.training.p_lr)
 
@@ -150,6 +151,7 @@ def main():
                     rewards,
                     dones,
                     truncs,
+                    act_masks_all.to(torch.bool)
                 )
                 obs = obs_
                 total_train_reward += float(rewards.sum())

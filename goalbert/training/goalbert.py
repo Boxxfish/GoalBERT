@@ -105,7 +105,7 @@ class GoalBERT(ColBERT):
             non_masks_padded[: non_masks.shape[0], :] = non_masks
 
             # Compute action masks
-            action_masks = torch.ones((MAX_MASKS, MAX_ACTIONS), dtype=torch.long)
+            action_masks = torch.ones((MAX_MASKS, MAX_ACTIONS), dtype=torch.int)
             action_masks[: interaction.shape[0], : interaction.shape[1]] = 0
 
             probs_all.append(probs)

@@ -35,9 +35,6 @@ def train_ppo(
     p_net.train()
     v_net_frozen = copy.deepcopy(v_net)
     v_net.train()
-    if device.type != "cpu":
-        p_net.to(device)
-        v_net.to(device)
 
     total_v_loss = 0.0
     total_p_loss = 0.0
@@ -67,18 +64,17 @@ def train_ppo(
             returns = returns.to(device=device)
             advantages = advantages.to(device=device)
             action_masks = action_masks.to(device=device)
-
-            action_probs[action_masks] = 0
             
             # Train policy network
             with torch.no_grad():
                 old_act_probs = torch.gather(action_probs, 2, actions[..., None]).squeeze(-1).log()
+                old_act_probs[action_masks[:, :, 0]] = 0
                 old_act_probs = old_act_probs.sum(-1)
             new_act_probs, _, _ = p_net.compute_probs(
                 prev_input_ids, prev_attn_masks
             )
-            new_act_probs[action_masks] = 0
             new_act_probs = torch.gather(new_act_probs, 2, actions[..., None]).squeeze(-1).log()
+            new_act_probs[action_masks[:, :, 0]] = 0
             new_act_probs = new_act_probs.sum(-1)
             term1 = (new_act_probs - old_act_probs).exp() * advantages.squeeze()
             term2 = (1.0 + epsilon * advantages.squeeze().sign()) * advantages.squeeze()
@@ -87,7 +83,7 @@ def train_ppo(
             total_p_loss += p_loss.item()
 
             # Train value network
-            diff = v_net(prev_input_ids, prev_attn_masks) - returns
+            diff = v_net(prev_input_ids.to("cuda:1"), prev_attn_masks.to("cuda:1")) - returns.to("cuda:1")
             v_loss = (diff * diff).mean() / gradient_steps
             v_loss.backward()
             total_v_loss += v_loss.item()
@@ -98,9 +94,6 @@ def train_ppo(
                 p_opt.zero_grad()
                 v_opt.zero_grad()
 
-    if device.type != "cpu":
-        p_net.cpu()
-        v_net.cpu()
     p_net.eval()
     v_net.eval()
 
