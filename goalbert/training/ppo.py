@@ -62,30 +62,24 @@ def train_ppo(
             # Move batch to device if applicable
             prev_input_ids = prev_input_ids.to(device=device)
             prev_attn_masks = prev_attn_masks.to(device=device)
-            actions = actions.to(device=device)
+            actions = actions.to(device=device).long()
             action_probs = action_probs.to(device=device)
             returns = returns.to(device=device)
             advantages = advantages.to(device=device)
             action_masks = action_masks.to(device=device)
 
-            # Perform action masking
-            action_probs[action_masks] = -torch.inf
-
+            action_probs[action_masks] = 0
+            
             # Train policy network
             with torch.no_grad():
-                old_act_probs = Categorical(logits=action_probs).log_prob(
-                    actions.squeeze()
-                )
-            # TODO: Add log probs across each action
-            new_log_probs = [
-                probs_all.log()
-                for (probs_all, act_masks_all, _) in p_net.compute_probs(
-                    prev_input_ids, prev_attn_masks
-                )
-            ]
-            new_act_probs = Categorical(logits=new_log_probs).log_prob(
-                actions.squeeze()
+                old_act_probs = torch.gather(action_probs, 2, actions[..., None]).squeeze(-1).log()
+                old_act_probs = old_act_probs.sum(-1)
+            new_act_probs, _, _ = p_net.compute_probs(
+                prev_input_ids, prev_attn_masks
             )
+            new_act_probs[action_masks] = 0
+            new_act_probs = torch.gather(new_act_probs, 2, actions[..., None]).squeeze(-1).log()
+            new_act_probs = new_act_probs.sum(-1)
             term1 = (new_act_probs - old_act_probs).exp() * advantages.squeeze()
             term2 = (1.0 + epsilon * advantages.squeeze().sign()) * advantages.squeeze()
             p_loss = -term1.min(term2).mean() / gradient_steps

@@ -55,7 +55,7 @@ class RolloutBuffer:
             [num_steps, num_envs], dtype=k, device=d, requires_grad=False
         )
         self.masks = torch.zeros(
-            action_probs_shape, dtype=torch.int, device=d, requires_grad=False
+            action_probs_shape, dtype=torch.bool, device=d, requires_grad=False
         )
 
     def insert_step(
@@ -92,7 +92,7 @@ class RolloutBuffer:
             )
             if masks:
                 self.masks[self.next].copy_(
-                    torch.tensor(masks, dtype=torch.int, device=d)
+                    torch.tensor(masks, dtype=torch.bool, device=d)
                 )
 
         self.next += 1

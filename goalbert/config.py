@@ -85,13 +85,13 @@ class TrainingConfig(BaseConfig):
         128  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
     )
     iterations: int = 1000  # Number of sample/train iterations.
-    train_iters: int = 4  # Number of passes over the samples collected.
-    train_batch_size: int = 32  # Minibatch size while training models.
+    train_iters: int = 2  # Number of passes over the samples collected.
+    train_batch_size: int = 256  # Minibatch size while training models.
     discount: float = 0.999  # Discount factor applied to rewards.
     lambda_: float = 0.99  # Lambda for GAE.
     epsilon: float = 0.2  # Epsilon for importance sample clipping.
     v_lr: float = 0.001  # Learning rate of the value net.
-    p_lr: float = 0.0001  # Learning rate of the policy net.
+    p_lr: float = 0.00001  # Learning rate of the policy net.
     gradient_steps: int = 1  # Number of gradient steps before optimizing.
     max_input_ids: int = MAX_ACTIONS  # Maxmimum # of input IDs.
 

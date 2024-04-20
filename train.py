@@ -46,10 +46,7 @@ class ValueNet(nn.Module):
         self, input_ids: torch.Tensor, attn_masks: torch.Tensor
     ) -> torch.Tensor:
         # Similar to ColBERT forward pass
-        input_ids, attention_mask = input_ids.to(self.device), attention_mask.to(
-            self.device
-        )
-        x = self.bert(input_ids, attention_mask=attn_masks)[0][0]  # Use only [CLS]
+        x = self.bert(input_ids, attention_mask=attn_masks)[0][:, 0]  # Use only [CLS]
         x = self.relu(x)
         x = self.linear(x)
         return x
@@ -137,10 +134,10 @@ def main():
                         print(obs[0][i])
                 obs_, rewards, dones, truncs, _ = env.step(actions)
 
-                input_ids_padded = torch.zeros((MAX_MASKS, config.training.max_input_ids))
+                input_ids_padded = torch.zeros((config.training.num_envs, config.training.max_input_ids))
                 input_ids_padded[:, : input_ids.shape[1]] = input_ids
 
-                attn_masks_padded = torch.zeros((MAX_MASKS, config.training.max_input_ids))
+                attn_masks_padded = torch.zeros((config.training.num_envs, config.training.max_input_ids))
                 attn_masks_padded[:, : attention_mask.shape[1]] = attention_mask
 
                 buffer.insert_step(
@@ -160,27 +157,27 @@ def main():
                 list(obs[0]),
                 context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]],
             )
-            input_ids_padded = torch.zeros((MAX_MASKS, config.training.max_input_ids))
+            input_ids_padded = torch.zeros((config.training.num_envs, config.training.max_input_ids))
             input_ids_padded[:, : input_ids.shape[1]] = input_ids
 
-            attn_masks_padded = torch.zeros((MAX_MASKS, config.training.max_input_ids))
+            attn_masks_padded = torch.zeros((config.training.num_envs, config.training.max_input_ids))
             attn_masks_padded[:, : attention_mask.shape[1]] = attention_mask
             buffer.insert_final_step(input_ids_padded, attn_masks_padded)
 
         # Train
-        # total_p_loss, total_v_loss = train_ppo(
-        #     goalbert,
-        #     v_net,
-        #     p_opt,
-        #     v_opt,
-        #     buffer,
-        #     torch.device(config.device),
-        #     config.training.train_iters,
-        #     config.training.train_batch_size,
-        #     config.training.discount,
-        #     config.training.lambda_,
-        #     config.training.epsilon,
-        # )
+        total_p_loss, total_v_loss = train_ppo(
+            goalbert,
+            v_net,
+            p_opt,
+            v_opt,
+            buffer,
+            torch.device(config.device),
+            config.training.train_iters,
+            config.training.train_batch_size,
+            config.training.discount,
+            config.training.lambda_,
+            config.training.epsilon,
+        )
         buffer.clear()
 
         # Save checkpoint
