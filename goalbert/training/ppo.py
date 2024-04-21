@@ -23,6 +23,7 @@ def train_ppo(
     lambda_: float,
     epsilon: float,
     gradient_steps: int = 1,
+    train_p_net: bool = True,
 ) -> Tuple[float, float]:
     """
     Performs the PPO training loop. Returns a tuple of total policy loss and
@@ -66,21 +67,22 @@ def train_ppo(
             action_masks = action_masks.to(device=device)
             
             # Train policy network
-            with torch.no_grad():
-                old_act_probs = torch.gather(action_probs, 2, actions[..., None]).squeeze(-1).log()
-                old_act_probs[action_masks[:, :, 0]] = 0
-                old_act_probs = old_act_probs.sum(-1)
-            new_act_probs, _, _ = p_net.compute_probs(
-                prev_input_ids, prev_attn_masks
-            )
-            new_act_probs = torch.gather(new_act_probs, 2, actions[..., None]).squeeze(-1).log()
-            new_act_probs[action_masks[:, :, 0]] = 0
-            new_act_probs = new_act_probs.sum(-1)
-            term1 = (new_act_probs - old_act_probs).exp() * advantages.squeeze()
-            term2 = (1.0 + epsilon * advantages.squeeze().sign()) * advantages.squeeze()
-            p_loss = -term1.min(term2).mean() / gradient_steps
-            p_loss.backward()
-            total_p_loss += p_loss.item()
+            if train_p_net:
+                with torch.no_grad():
+                    old_act_probs = torch.gather(action_probs, 2, actions[..., None]).squeeze(-1).log()
+                    old_act_probs[action_masks[:, :, 0]] = 0
+                    old_act_probs = old_act_probs.sum(-1)
+                new_act_probs, _, _ = p_net.compute_probs(
+                    prev_input_ids, prev_attn_masks
+                )
+                new_act_probs = torch.gather(new_act_probs, 2, actions[..., None]).squeeze(-1).log()
+                new_act_probs[action_masks[:, :, 0]] = 0
+                new_act_probs = new_act_probs.sum(-1)
+                term1 = (new_act_probs - old_act_probs).exp() * advantages.squeeze()
+                term2 = (1.0 + epsilon * advantages.squeeze().sign()) * advantages.squeeze()
+                p_loss = -term1.min(term2).mean() / gradient_steps
+                p_loss.backward()
+                total_p_loss += p_loss.item()
 
             # Train value network
             diff = v_net(prev_input_ids.to("cuda:1"), prev_attn_masks.to("cuda:1")) - returns.to("cuda:1")
@@ -89,9 +91,10 @@ def train_ppo(
             total_v_loss += v_loss.item()
 
             if (i + 1) % gradient_steps == 0:
-                p_opt.step()
+                if train_p_net:
+                    p_opt.step()
+                    p_opt.zero_grad()
                 v_opt.step()
-                p_opt.zero_grad()
                 v_opt.zero_grad()
 
     p_net.eval()

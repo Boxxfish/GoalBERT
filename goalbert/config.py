@@ -91,8 +91,8 @@ class TrainingConfig(BaseConfig):
     lambda_: float = 0.99  # Lambda for GAE.
     epsilon: float = 0.2  # Epsilon for importance sample clipping.
     v_lr: float = 0.001  # Learning rate of the value net.
-    p_lr: float = 0.000001  # Learning rate of the policy net.
-    gradient_steps: int = 32  # Number of gradient steps before optimizing.
+    p_lr: float = 0.00001  # Learning rate of the policy net.
+    gradient_steps: int = 16  # Number of gradient steps before optimizing.
     max_input_ids: int = MAX_ACTIONS  # Maxmimum # of input IDs.
     value_warmup: int = 20 # Number of iterations to train just the value network at the beginning, to give the baseline a head start.
 
