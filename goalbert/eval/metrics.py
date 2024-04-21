@@ -30,7 +30,7 @@ def f1(pred: Set[T], actual: Set[T]) -> float:
     """
     p = precision(pred, actual)
     r = recall(pred, actual)
-    return (2 * p * r) / (p + r)
+    return (2 * p * r) / (p + r + 0.0001)
 
 
 def em(pred: Set[T], actual: Set[T]) -> float:
