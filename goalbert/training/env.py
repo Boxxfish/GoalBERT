@@ -17,6 +17,7 @@ from goalbert.training.goalbert import (
     GoalBERT,
     probs_act_masks_to_distrs,
 )
+from goalbert.eval import metrics
 from query_colbert import load_collectionX
 
 
@@ -89,13 +90,12 @@ class GoalBERTEnv(gym.Env):
         self,
         goalbert: GoalBERT,
         shared: SharedResources,
-        n_hops: int = 4,
         reward_depth: int = 100,  # Cutoff for reward
     ):
         super().__init__()
-        self.n_hops = n_hops
         self.hops = 0
         self.context = []
+        self.context_facts = []
         self.seen_facts = set()
         self.shared = shared
         self.goalbert = goalbert
@@ -103,7 +103,7 @@ class GoalBERTEnv(gym.Env):
         self.support_facts = []
         self.reward_depth = reward_depth
         self.observation_space = gym.spaces.Tuple(
-            [gym.spaces.Text(64), gym.spaces.Sequence(gym.spaces.Text(MAX_ACTIONS))]
+            [gym.spaces.Text(MAX_MASKS), gym.spaces.Sequence(gym.spaces.Text(MAX_ACTIONS))]
         )
         self.action_space = gym.spaces.MultiDiscrete([MAX_MASKS, MAX_ACTIONS])
 
@@ -135,14 +135,16 @@ class GoalBERTEnv(gym.Env):
             else ((self.reward_depth - closest_rank) / self.reward_depth)
         )
 
-        # Greedily select fact
+        # Greedily select fact.
+        # If the closest fact was very close to being selected, add it to the seen facts so we don't select it again.
         fact_idx = doc_ids[0]
         self.context.append(self.shared.fact_index.get_fact_str(fact_idx))
+        self.context_facts.append(fact_idx)
         if closest_rank is not None and closest_rank < 10:
             self.seen_facts.add(fact_idx)
 
         self.hops += 1
-        done = self.hops == self.n_hops
+        done = self.hops == self.qa.num_hops
 
         return (query, self.context), reward, done, False, {}
 
@@ -170,12 +172,25 @@ class GoalBERTEnv(gym.Env):
             )
 
         self.context = []
+        self.context_facts = []
         self.seen_facts = set()
         self.support_facts = [
             int(self.shared.fact_index.from_pid_sid_to_fact_id(tuple(pid_qid)))
             for pid_qid in self.qa.support_facts
         ]
         return (self.qa.question, None), {}
+    
+    def compute_em(self) -> float:
+        return metrics.em(set(self.support_facts), set(self.context_facts))
+    
+    def compute_f1(self) -> float:
+        return metrics.f1(set(self.support_facts), set(self.context_facts))
+    
+    def compute_p(self) -> float:
+        return metrics.precision(set(self.support_facts), set(self.context_facts))
+    
+    def compute_r(self) -> float:
+        return metrics.recall(set(self.support_facts), set(self.context_facts))
 
 
 def fmt_context(ctx: List[str]) -> Optional[str]:
@@ -204,7 +219,7 @@ def test():
         searcher.checkpoint = goalbert
         del colbert
     shared = SharedResources(searcher, fact_index, q_index)
-    env = GoalBERTEnv(goalbert, shared, n_hops=4, reward_depth=100)
+    env = GoalBERTEnv(goalbert, shared, reward_depth=100)
 
     obs, _ = env.reset()
     for i in range(10):

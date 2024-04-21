@@ -12,7 +12,6 @@ from torch import nn
 from torch.distributions import Categorical
 from tqdm import tqdm
 import gymnasium as gym
-from gymnasium.spaces import Discrete, Box
 import wandb
 import random
 from string import ascii_lowercase, digits
@@ -20,7 +19,6 @@ from pathlib import Path
 import json
 from safetensors.torch import save_model
 from transformers import BertModel
-import torch.nn.functional as F
 
 from goalbert.training.checkpoint import GCheckpoint
 from goalbert.training.env import (
@@ -30,7 +28,7 @@ from goalbert.training.env import (
     SharedResources,
     fmt_context,
 )
-from goalbert.training.goalbert import MAX_ACTIONS, MAX_MASKS, probs_act_masks_to_distrs
+from goalbert.training.goalbert import MAX_MASKS, probs_act_masks_to_distrs
 from goalbert.training.ppo import train_ppo
 from goalbert.training.rollout_buffer import RolloutBuffer
 
@@ -130,9 +128,6 @@ def main():
                     action_distr.sample().cpu().tolist()
                     for action_distr in action_distrs
                 ]
-                for i, a in enumerate(actions):
-                    if len(a) == 0:
-                        print(obs[0][i])
                 obs_, rewards, dones, truncs, _ = env.step(actions)
 
                 input_ids_padded = torch.zeros((config.training.num_envs, config.training.max_input_ids))
@@ -194,32 +189,45 @@ def main():
         }
 
         # Evaluate performance
-        # if iter_idx % config.eval_every == 0:
-        #     with torch.no_grad():
-        #         reward_total = 0
-        #         entropy_total = 0.0
-        #         total_steps = 0
-        #         for _ in range(config.eval_runs):
-        #             eval_obs = torch.Tensor(test_env.reset()[0])
-        #             for _ in range(config.max_eval_steps):
-        #                 distr = Categorical(
-        #                     logits=p_net(eval_obs.unsqueeze(0)).squeeze(0)
-        #                 )
-        #                 action = distr.sample().numpy()
-        #                 obs_, reward, done, trunc, _ = test_env.step(action)
-        #                 eval_obs = torch.Tensor(obs_)
-        #                 reward_total += reward
-        #                 entropy_total += distr.entropy().item()
-        #                 if done or trunc:
-        #                     break
-        #                 total_steps += 1
+        if iter_idx % config.eval_every == 0:
+            with torch.no_grad():
+                em_total = 0.0
+                f1_total = 0.0
+                p_total = 0.0
+                r_total = 0.0
+                for _ in range(config.eval_runs):
+                    eval_obs = test_env.reset()[0]
+                    while True:
+                        probs_all, act_masks_all, _ = searcher.compute_probs(
+                            [eval_obs[0]],
+                            context=[fmt_context(eval_obs[1])] if eval_obs[1] else None,
+                        )
+                        action_distrs = probs_act_masks_to_distrs(probs_all, act_masks_all)
+                        input_ids, attention_mask = goalbert.query_tokenizer.tensorize(
+                            [eval_obs[0]],
+                            context=[fmt_context(eval_obs[1])] if eval_obs[1] else None,
+                        )
+                        actions = [
+                            action_distr.sample().cpu().tolist()
+                            for action_distr in action_distrs
+                        ]
+                        eval_obs, _, done, _, _ = test_env.step(actions[0])
 
-        #         log_dict.update(
-        #             {
-        #                 "avg_eval_episode_reward": reward_total / config.eval_runs,
-        #                 "avg_eval_entropy": entropy_total / total_steps,
-        #             }
-        #         )
+                        if done:
+                            em_total += test_env.compute_em()
+                            f1_total += test_env.compute_f1()
+                            p_total += test_env.compute_p()
+                            r_total += test_env.compute_r()
+                            break
+
+                log_dict.update(
+                    {
+                        "avg_eval_em": em_total / config.eval_runs,
+                        "avg_eval_f1": f1_total / config.eval_runs,
+                        "avg_eval_p": p_total / config.eval_runs,
+                        "avg_eval_r": r_total / config.eval_runs,
+                    }
+                )
 
         wandb.log(log_dict)
 
