@@ -11,6 +11,7 @@ import ujson  # type: ignore
 
 from goalbert.training.checkpoint import GCheckpoint
 from goalbert.training.goalbert import probs_act_masks_to_distrs
+from safetensors.torch import load_file
 
 
 def load_collectionX(collection_path, dict_in_dict=False):
@@ -44,6 +45,7 @@ def load_collectionX(collection_path, dict_in_dict=False):
 def main():
     parser = ArgumentParser()
     parser.add_argument("--goalbert", action="store_true")
+    parser.add_argument("--checkpoint")
     parser.add_argument("--hops", type=int, default=1)
     args = parser.parse_args()
 
@@ -59,11 +61,18 @@ def main():
 
         # Replace the checkpoint
         if args.goalbert:
-            colbert = searcher.checkpoint
-            goalbert = GCheckpoint(colbert.name, colbert_config=config)
-            goalbert.load_state_dict(colbert.state_dict())
-            searcher.checkpoint = goalbert
-            del colbert
+            if args.checkpoint:
+                colbert = searcher.checkpoint
+                goalbert = GCheckpoint(colbert.name, colbert_config=config)
+                goalbert.load_state_dict(load_file(args.checkpoint))
+                searcher.checkpoint = goalbert
+                del colbert
+            else:
+                colbert = searcher.checkpoint
+                goalbert = GCheckpoint(colbert.name, colbert_config=config)
+                goalbert.load_state_dict(colbert.state_dict())
+                searcher.checkpoint = goalbert
+                del colbert
 
         while True:
             query = input("> ")
