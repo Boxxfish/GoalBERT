@@ -175,7 +175,7 @@ def main():
             config.training.lambda_,
             config.training.epsilon,
             gradient_steps=config.training.gradient_steps,
-            train_p_net=iter_idx > config.training.value_warmup
+            train_p_net=iter_idx >= config.training.value_warmup
         )
         buffer.clear()
 
