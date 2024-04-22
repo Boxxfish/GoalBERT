@@ -17,8 +17,8 @@ import random
 from string import ascii_lowercase, digits
 from pathlib import Path
 import json
-from safetensors.torch import save_model
-from transformers import BertModel
+from safetensors.torch import save_model, load_file
+from transformers import DistilBertModel
 
 from goalbert.training.checkpoint import GCheckpoint
 from goalbert.training.env import (
@@ -34,18 +34,16 @@ from goalbert.training.rollout_buffer import RolloutBuffer
 
 
 class ValueNet(nn.Module):
-    def __init__(self, from_pretrained: str = "bert-base-uncased"):
+    def __init__(self, from_pretrained: str = "distilbert/distilbert-base-uncased"):
         nn.Module.__init__(self)
-        self.bert = BertModel.from_pretrained(from_pretrained)
+        self.bert = DistilBertModel.from_pretrained(from_pretrained)
         self.linear = nn.Linear(768, 1)
-        self.relu = nn.ReLU()
 
     def forward(
         self, input_ids: torch.Tensor, attn_masks: torch.Tensor
     ) -> torch.Tensor:
         # Similar to ColBERT forward pass
         x = self.bert(input_ids, attention_mask=attn_masks)[0][:, 0]  # Use only [CLS]
-        x = self.relu(x)
         x = self.linear(x)
         return x
 
@@ -78,6 +76,8 @@ def main():
     test_env = GoalBERTEnv(goalbert, shared=shared)
 
     v_net = ValueNet()
+    if config.v_net_finetune:
+        v_net.load_state_dict(load_file(config.v_net_finetune))
     v_net.to("cuda:1")
     v_opt = torch.optim.Adam(v_net.parameters(), lr=config.training.v_lr)
     p_opt = torch.optim.Adam(goalbert.parameters(), lr=config.training.p_lr)
@@ -162,7 +162,7 @@ def main():
             buffer.insert_final_step(input_ids_padded, attn_masks_padded)
 
         # Train
-        total_p_loss, total_v_loss = train_ppo(
+        total_p_loss, total_v_loss, total_p_norm, total_v_norm = train_ppo(
             goalbert,
             v_net,
             p_opt,
@@ -188,6 +188,8 @@ def main():
             "avg_train_reward": total_train_reward / config.training.train_steps,
             "avg_v_loss": total_v_loss / config.training.train_iters,
             "avg_p_loss": total_p_loss / config.training.train_iters,
+            "avg_v_norm": total_v_norm / config.training.train_iters,
+            "avg_p_norm": total_p_norm / config.training.train_iters,
         }
 
         # Evaluate performance

@@ -90,11 +90,12 @@ class TrainingConfig(BaseConfig):
     discount: float = 0.999  # Discount factor applied to rewards.
     lambda_: float = 0.99  # Lambda for GAE.
     epsilon: float = 0.2  # Epsilon for importance sample clipping.
-    v_lr: float = 0.01  # Learning rate of the value net.
+    v_lr: float = 0.0001  # Learning rate of the value net.
     p_lr: float = 0.00001  # Learning rate of the policy net.
     gradient_steps: int = 8  # Number of gradient steps before optimizing.
     max_input_ids: int = MAX_ACTIONS  # Maxmimum # of input IDs.
-    value_warmup: int = 20 # Number of iterations to train just the value network at the beginning, to give the baseline a head start.
+    value_warmup: int = 0 # Number of iterations to train just the value network at the beginning, to give the baseline a head start.
+    p_grad_clip: float = 100.0 # The gradient clipping applied to the policy network.
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -108,6 +109,7 @@ class GoalBERTConfig(BaseConfig):
     save_every: int = 10
     eval_every: int = 10
     eval_runs: int = 100
+    v_net_finetune: str = ""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

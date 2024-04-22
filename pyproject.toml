@@ -14,8 +14,8 @@ gymnasium = "^0.29.1"
 wandb = "^0.16.4"
 safetensors = "^0.4.2"
 colbert-ai = {path = "ColBERT", develop = true}
-transformers = "4.38.0"
 tokenizers = "^0.15.2"
+transformers = "4.38.0"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "1.8.0"

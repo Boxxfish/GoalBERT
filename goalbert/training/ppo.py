@@ -9,7 +9,6 @@ from tqdm import tqdm
 from goalbert.training.goalbert import GoalBERT
 from goalbert.training.rollout_buffer import RolloutBuffer
 
-
 def train_ppo(
     p_net: GoalBERT,
     v_net: nn.Module,
@@ -24,7 +23,8 @@ def train_ppo(
     epsilon: float,
     gradient_steps: int = 1,
     train_p_net: bool = True,
-) -> Tuple[float, float]:
+    p_grad_clip: float = 99999.0,
+) -> Tuple[float, float, float, float]:
     """
     Performs the PPO training loop. Returns a tuple of total policy loss and
     total value loss.
@@ -39,6 +39,8 @@ def train_ppo(
 
     total_v_loss = 0.0
     total_p_loss = 0.0
+    total_v_norm = 0.0
+    total_p_norm = 0.0
 
     p_opt.zero_grad()
     v_opt.zero_grad()
@@ -88,16 +90,29 @@ def train_ppo(
             diff = v_net(prev_input_ids.to("cuda:1"), prev_attn_masks.to("cuda:1")) - returns.to("cuda:1")
             v_loss = (diff * diff).mean() / gradient_steps
             v_loss.backward()
+            
             total_v_loss += v_loss.item()
 
             if (i + 1) % gradient_steps == 0:
                 if train_p_net:
+                    total_p_norm += grad_norm(p_net)
+                    torch.nn.utils.clip_grad.clip_grad_norm_(p_net.parameters(), p_grad_clip)
                     p_opt.step()
                     p_opt.zero_grad()
+                total_v_norm += grad_norm(v_net)
                 v_opt.step()
                 v_opt.zero_grad()
 
     p_net.eval()
     v_net.eval()
 
-    return (total_p_loss, total_v_loss)
+    return (total_p_loss, total_v_loss, total_p_norm, total_v_norm)
+
+def grad_norm(net: nn.Module) -> float:
+    total_norm = 0.0
+    for p in net.parameters():
+        if isinstance(p.grad, torch.Tensor):
+            param_norm = p.grad.detach().data.norm(2)
+            total_norm += param_norm.item() ** 2
+    norm = total_norm ** 0.5
+    return norm
