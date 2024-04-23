@@ -63,6 +63,7 @@ class GoalBERT(ColBERT):
         )
         Q = self.bert(input_ids, attention_mask=attention_mask)[0]
         Q = self.linear(Q)  # Shape: (num_queries, query_maxlen, emb_dim)
+        Q = torch.nn.functional.normalize(Q, p=2, dim=2)
 
         # `mask` shouldn't do anything to the query; [MASK] tokens count as part of the input
         mask = (
@@ -142,7 +143,7 @@ class GoalBERT(ColBERT):
             new_Q.append(new_q)
         Q = torch.stack(new_Q, 0)  # Shape: (num_queries, num_masks, q_dim)
 
-        return torch.nn.functional.normalize(Q, p=2, dim=2)
+        return Q
 
     def queryFromText(self, queries, context=None, idxs=None):
         input_ids, attention_mask = self.query_tokenizer.tensorize(

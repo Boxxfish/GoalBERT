@@ -54,6 +54,9 @@ class RolloutBuffer:
         self.truncs = torch.zeros(
             [num_steps, num_envs], dtype=k, device=d, requires_grad=False
         )
+        self.non_masks = torch.zeros(
+            [num_steps, num_envs, max_input_ids, 128], dtype=k, device=d, requires_grad=False
+        )
         self.masks = torch.zeros(
             action_probs_shape, dtype=torch.bool, device=d, requires_grad=False
         )
@@ -67,6 +70,7 @@ class RolloutBuffer:
         rewards: List[float],
         dones: List[bool],
         truncs: List[bool],
+        non_masks: torch.Tensor,
         masks: torch.Tensor,
     ):
         """
@@ -90,6 +94,7 @@ class RolloutBuffer:
             self.truncs[self.next].copy_(
                 torch.tensor(truncs, dtype=torch.float, device=d)
             )
+            self.non_masks[self.next].copy_(non_masks)
             self.masks[self.next].copy_(masks)
 
         self.next += 1
@@ -108,6 +113,7 @@ class RolloutBuffer:
         Tuple[
             torch.Tensor,  # Input IDs
             torch.Tensor,  # Attention masks
+            torch.Tensor,
             torch.Tensor,
             torch.Tensor,
             torch.Tensor,
@@ -168,6 +174,7 @@ class RolloutBuffer:
             ).to(d)
             rand_actions = self.actions.flatten(0, 1).index_select(0, indices).to(d)
             rand_action_probs = self.action_probs.flatten(0, 1).index_select(0, indices).to(d)
+            rand_non_masks = self.non_masks.flatten(0, 1).index_select(0, indices).to(d)
             rand_masks = self.masks.flatten(0, 1).index_select(0, indices).to(d)
             rand_returns = returns.flatten(0, 1).index_select(0, indices.to(d))
             rand_advantages = advantages.flatten(0, 1).index_select(0, indices.to(d))
@@ -192,6 +199,9 @@ class RolloutBuffer:
                         ),
                         rand_returns[start:end].reshape([batch_size, 1]),
                         rand_advantages[start:end].reshape([batch_size, 1]),
+                        rand_non_masks[start:end].reshape(
+                            [batch_size] + list(self.non_masks.shape)[2:]
+                        ),
                         rand_masks[start:end].reshape(
                             [batch_size] + list(self.action_probs.shape)[2:]
                         ),

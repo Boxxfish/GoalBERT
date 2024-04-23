@@ -24,7 +24,9 @@ def train_ppo(
     gradient_steps: int = 1,
     train_p_net: bool = True,
     p_grad_clip: float = 99999.0,
-) -> Tuple[float, float, float, float]:
+    distill_coeff: float = 0.0,
+    entropy_coeff: float = 0.0,
+) -> Tuple[float, float, float, float, float]:
     """
     Performs the PPO training loop. Returns a tuple of total policy loss and
     total value loss.
@@ -41,6 +43,7 @@ def train_ppo(
     total_p_loss = 0.0
     total_v_norm = 0.0
     total_p_norm = 0.0
+    total_entropy = 0.0
 
     p_opt.zero_grad()
     v_opt.zero_grad()
@@ -56,6 +59,7 @@ def train_ppo(
                 action_probs,
                 returns,
                 advantages,
+                non_masks,
                 action_masks,
             ),
         ) in enumerate(batches):
@@ -66,6 +70,7 @@ def train_ppo(
             action_probs = action_probs.to(device=device)
             returns = returns.to(device=device)
             advantages = advantages.to(device=device)
+            non_masks = non_masks.to(device=device)
             action_masks = action_masks.to(device=device)
             
             # Train policy network
@@ -74,15 +79,29 @@ def train_ppo(
                     old_act_probs = torch.gather(action_probs, 2, actions[..., None]).squeeze(-1).log()
                     old_act_probs[action_masks[:, :, 0]] = 0
                     old_act_probs = old_act_probs.sum(-1)
-                new_act_probs, _, _ = p_net.compute_probs(
+                new_act_probs, _, new_non_masks = p_net.compute_probs(
                     prev_input_ids, prev_attn_masks
                 )
-                new_act_probs = torch.gather(new_act_probs, 2, actions[..., None]).squeeze(-1).log()
+
+                new_act_probs = torch.gather(new_act_probs, 2, actions[..., None]).squeeze(-1)
+                new_act_probs_orig = new_act_probs
+                new_act_probs = new_act_probs.log()
                 new_act_probs[action_masks[:, :, 0]] = 0
+
+                # Compute entropy of new probs
+                entropy = -(new_act_probs_orig * new_act_probs).sum(-1).mean()
+                entropy_loss = entropy * entropy_coeff
+                total_entropy += entropy.item()
+
                 new_act_probs = new_act_probs.sum(-1)
                 term1 = (new_act_probs - old_act_probs).exp() * advantages.squeeze()
                 term2 = (1.0 + epsilon * advantages.squeeze().sign()) * advantages.squeeze()
-                p_loss = -term1.min(term2).mean() / gradient_steps
+                
+                non_masks_flat = non_masks.flatten(0, 1)
+                new_non_masks_flat = new_non_masks.flatten(0, 1).to(device=device)
+                distill_loss = (torch.diag(new_non_masks_flat @ non_masks_flat.T).sum() / (~action_masks[:, 0, :]).sum()) * distill_coeff
+                
+                p_loss = (-term1.min(term2).mean() + -distill_loss + -entropy_loss) / gradient_steps
                 p_loss.backward()
                 total_p_loss += p_loss.item()
 
@@ -106,7 +125,7 @@ def train_ppo(
     p_net.eval()
     v_net.eval()
 
-    return (total_p_loss, total_v_loss, total_p_norm, total_v_norm)
+    return (total_p_loss, total_v_loss, total_p_norm, total_v_norm, total_entropy)
 
 def grad_norm(net: nn.Module) -> float:
     total_norm = 0.0

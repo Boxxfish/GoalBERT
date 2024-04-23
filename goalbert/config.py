@@ -82,20 +82,22 @@ class TrainingConfig(BaseConfig):
         32  # Number of environments to step through at once during sampling.
     )
     train_steps: int = (
-        128  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
+        16  # Number of steps to step through during sampling. Total # of samples is train_steps * num_envs/
     )
     iterations: int = 1000  # Number of sample/train iterations.
-    train_iters: int = 2  # Number of passes over the samples collected.
+    train_iters: int = 1  # Number of passes over the samples collected.
     train_batch_size: int = 8  # Minibatch size while training models.
-    discount: float = 0.999  # Discount factor applied to rewards.
+    discount: float = 1.0  # Discount factor applied to rewards.
     lambda_: float = 0.99  # Lambda for GAE.
     epsilon: float = 0.2  # Epsilon for importance sample clipping.
     v_lr: float = 0.0001  # Learning rate of the value net.
-    p_lr: float = 0.00001  # Learning rate of the policy net.
+    p_lr: float = 0.000005  # Learning rate of the policy net.
+    distill_coeff: float = 1.0  # Learning rate of the policy net.
     gradient_steps: int = 8  # Number of gradient steps before optimizing.
     max_input_ids: int = MAX_ACTIONS  # Maxmimum # of input IDs.
     value_warmup: int = 0 # Number of iterations to train just the value network at the beginning, to give the baseline a head start.
-    p_grad_clip: float = 100.0 # The gradient clipping applied to the policy network.
+    p_grad_clip: float = 1000.0 # The gradient clipping applied to the policy network.
+    entropy_coeff: float = 0.01
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

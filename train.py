@@ -62,6 +62,9 @@ def main():
         )
         searcher = Searcher(index="wiki2017.nbits=2", config=config_)
         colbert = searcher.checkpoint
+        goalbert_orig = GCheckpoint(colbert.name, colbert_config=config_)
+        goalbert_orig.to("cuda:2")
+        goalbert_orig.load_state_dict(colbert.state_dict())
         goalbert = GCheckpoint(colbert.name, colbert_config=config_)
         goalbert.load_state_dict(colbert.state_dict())
         searcher.checkpoint = goalbert
@@ -119,6 +122,15 @@ def main():
                     list(obs[0]),
                     context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]],
                 )
+
+                # Compute original non-MASK embeddings
+                searcher.checkpoint = goalbert_orig
+                non_masks_orig_all = searcher.compute_probs(
+                    list(obs[0]),
+                    context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]],
+                )[2]
+                searcher.checkpoint = goalbert
+
                 action_distrs = probs_act_masks_to_distrs(probs_all, act_masks_all)
                 input_ids, attention_mask = goalbert.query_tokenizer.tensorize(
                     list(obs[0]),
@@ -146,7 +158,8 @@ def main():
                     rewards,
                     dones,
                     truncs,
-                    act_masks_all.to(torch.bool)
+                    non_masks_orig_all,
+                    act_masks_all.to(torch.bool),
                 )
                 obs = obs_
                 total_train_reward += float(rewards.sum())
@@ -162,7 +175,7 @@ def main():
             buffer.insert_final_step(input_ids_padded, attn_masks_padded)
 
         # Train
-        total_p_loss, total_v_loss, total_p_norm, total_v_norm = train_ppo(
+        total_p_loss, total_v_loss, total_p_norm, total_v_norm, total_entropy = train_ppo(
             goalbert,
             v_net,
             p_opt,
@@ -175,7 +188,9 @@ def main():
             config.training.lambda_,
             config.training.epsilon,
             gradient_steps=config.training.gradient_steps,
-            train_p_net=iter_idx >= config.training.value_warmup
+            train_p_net=iter_idx >= config.training.value_warmup,
+            distill_coeff=config.training.distill_coeff,
+            entropy_coeff=config.training.entropy_coeff,
         )
         buffer.clear()
 
@@ -185,11 +200,12 @@ def main():
             save_model(goalbert, chkpt_path / f"goalbert-{iter_idx}.safetensors")
 
         log_dict = {
-            "avg_train_reward": total_train_reward / config.training.train_steps,
+            "avg_train_reward": total_train_reward / (config.training.train_steps * config.training.num_envs),
             "avg_v_loss": total_v_loss / config.training.train_iters,
             "avg_p_loss": total_p_loss / config.training.train_iters,
             "avg_v_norm": total_v_norm / config.training.train_iters,
             "avg_p_norm": total_p_norm / config.training.train_iters,
+            "avg_entropy": total_entropy / config.training.train_iters,
         }
 
         # Evaluate performance
