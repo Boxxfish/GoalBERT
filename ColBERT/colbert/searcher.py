@@ -87,7 +87,7 @@ class Searcher:
 
         return Q
 
-    def compute_probs(
+    def compute_logits(
         self,
         text: str,
         full_length_search=False,
@@ -102,7 +102,7 @@ class Searcher:
 
         self.checkpoint.query_tokenizer.query_maxlen = self.config.query_maxlen
         assert isinstance(self.checkpoint, GCheckpoint)
-        return self.checkpoint.compute_probs_from_text(
+        return self.checkpoint.compute_logits_from_text(
             queries,
             context=context,
             bsize=bsize,

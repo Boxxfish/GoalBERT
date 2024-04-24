@@ -2,11 +2,12 @@ import copy
 from typing import *
 
 import torch
+torch.autograd.set_detect_anomaly(True)
 from torch import nn
 from torch.distributions import Categorical
 from tqdm import tqdm
 
-from goalbert.training.goalbert import GoalBERT
+from goalbert.training.goalbert import GoalBERT, logits_act_masks_to_masked_probs
 from goalbert.training.rollout_buffer import RolloutBuffer
 
 def train_ppo(
@@ -76,17 +77,24 @@ def train_ppo(
             # Train policy network
             if train_p_net:
                 with torch.no_grad():
-                    old_act_probs = torch.gather(action_probs, 2, actions[..., None]).squeeze(-1).log()
-                    old_act_probs[action_masks[:, :, 0]] = 0
-                    old_act_probs = old_act_probs.sum(-1)
-                new_act_probs, _, new_non_masks = p_net.compute_probs(
+                    selected_masks = torch.gather(action_masks, 2, actions[..., None]).squeeze(-1)
+                    old_act_probs = action_probs.clone()
+                    old_act_probs = torch.gather(old_act_probs, 2, actions[..., None]).squeeze(-1)
+                    old_act_probs[selected_masks] = 1
+                    old_act_probs = old_act_probs.log().sum(-1)
+                    old_act_probs = old_act_probs.detach()
+                new_act_logits, _, new_non_masks = p_net.compute_logits(
                     prev_input_ids, prev_attn_masks
                 )
 
+                new_act_probs = logits_act_masks_to_masked_probs(new_act_logits, action_masks)
+                new_act_probs_orig = new_act_probs.clone()
+                new_act_probs_orig = torch.gather(new_act_probs_orig, 2, actions[..., None]).squeeze(-1)
+                new_act_probs_orig[selected_masks] = 0
+
                 new_act_probs = torch.gather(new_act_probs, 2, actions[..., None]).squeeze(-1)
-                new_act_probs_orig = new_act_probs
+                new_act_probs[selected_masks] = 1
                 new_act_probs = new_act_probs.log()
-                new_act_probs[action_masks[:, :, 0]] = 0
 
                 # Compute entropy of new probs
                 entropy = -(new_act_probs_orig * new_act_probs).sum(-1).mean()
@@ -100,8 +108,8 @@ def train_ppo(
                 non_masks_flat = non_masks.flatten(0, 1)
                 new_non_masks_flat = new_non_masks.flatten(0, 1).to(device=device)
                 distill_loss = (torch.diag(new_non_masks_flat @ non_masks_flat.T).sum() / (~action_masks[:, 0, :]).sum()) * distill_coeff
-                
                 p_loss = (-term1.min(term2).mean() + -distill_loss + -entropy_loss) / gradient_steps
+                
                 p_loss.backward()
                 total_p_loss += p_loss.item()
 

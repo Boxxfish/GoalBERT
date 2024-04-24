@@ -92,12 +92,12 @@ class TrainingConfig(BaseConfig):
     epsilon: float = 0.2  # Epsilon for importance sample clipping.
     v_lr: float = 0.0001  # Learning rate of the value net.
     p_lr: float = 0.000005  # Learning rate of the policy net.
-    distill_coeff: float = 1.0  # Learning rate of the policy net.
+    distill_coeff: float = 1.0  # Cosine maximization applied to non-MASKs.
     gradient_steps: int = 8  # Number of gradient steps before optimizing.
     max_input_ids: int = MAX_ACTIONS  # Maxmimum # of input IDs.
     value_warmup: int = 0 # Number of iterations to train just the value network at the beginning, to give the baseline a head start.
     p_grad_clip: float = 1000.0 # The gradient clipping applied to the policy network.
-    entropy_coeff: float = 0.01
+    entropy_coeff: float = 0.003
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

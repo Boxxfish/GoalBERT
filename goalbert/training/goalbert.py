@@ -8,22 +8,37 @@ MAX_MASKS = 64
 MAX_ACTIONS = 512
 
 
-def probs_act_masks_to_distrs(
-    probs: torch.Tensor,  # Shape: (num_queries, MAX_MASKS, MAX_ACTIONS)
+def logits_act_masks_to_distrs(
+    logits: torch.Tensor,  # Shape: (num_queries, MAX_MASKS, MAX_ACTIONS)
     act_masks: torch.Tensor,  # Shape: (num_queries, MAX_MASKS, MAX_ACTIONS)
 ) -> List[torch.distributions.Categorical]:
     """
-    Converts probs and action masks into a list of distributions.
+    Converts logits and action masks into a list of distributions.
+    Automatically performs action masking.
     """
-    # Slice down the action probablities
     all_distrs = []
-    for p, m in zip(probs, act_masks):
-        max_mask_idx = m.argmax(0).cpu()[0].item()
-        max_action_idx = m.argmax(1).cpu()[0].item()
-        distr = torch.distributions.Categorical(probs=p[:max_mask_idx, :max_action_idx])
+    for p, m in zip(logits, act_masks):
+        masked_p = p.clone()
+        masked_p[m] = -torch.inf
+        probs = torch.softmax(masked_p, dim=-1)
+        max_mask_idx = m.int().argmax(0).cpu()[m.int()[0].argmin(0)].item()
+        probs[m] = 0
+        distr = torch.distributions.Categorical(probs=probs[:max_mask_idx, :])
         all_distrs.append(distr)
     return all_distrs
 
+
+def logits_act_masks_to_masked_probs(
+    logits: torch.Tensor,  # Shape: (num_queries, MAX_MASKS, MAX_ACTIONS)
+    act_masks: torch.Tensor,  # Shape: (num_queries, MAX_MASKS, MAX_ACTIONS)
+) -> torch.Tensor:
+    """
+    Masks logits and returns normalized probabilties.
+    """
+    masked_logits = logits.clone()
+    masked_logits[act_masks] = -99999
+    probs = torch.softmax(masked_logits, dim=-1)
+    return probs
 
 class GoalBERT(ColBERT):
     """
@@ -46,7 +61,7 @@ class GoalBERT(ColBERT):
     def compute_ib_loss(self, Q, D, D_mask):
         assert False, "Don't use this method."
 
-    def compute_probs(
+    def compute_logits(
         self,
         input_ids: torch.Tensor,  # Shape: (num_queries, query_maxlen)
         attention_mask: torch.Tensor,  # Shape: (num_queries, query_maxlen)
@@ -76,23 +91,27 @@ class GoalBERT(ColBERT):
         # For each [MASK], generate a distribution over all non-[MASK] tokens and greedy select.
         # Non-[MASK]s include context.
         MASK = 103
+        PAD = 0
         mask_idxs = (
             (input_ids == MASK).int().argmax(1).cpu().tolist()
         )  # List of the first [MASK] in each query
-        probs_all = []
+        pad_idxs = (
+            (input_ids == PAD).int().argmax(1).cpu().tolist()
+        )  # List of the first [PAD] in each query
+        logits_all = []
         action_masks_all = []
         non_masks_all = []
-        for i, mask_idx in enumerate(mask_idxs):
+        for i, (mask_idx, pad_idx) in enumerate(zip(mask_idxs, pad_idxs)):
             # Compute probabilities
             non_masks = torch.concat(
-                [Q[i, :mask_idx, :], Q[i, self.colbert_config.query_maxlen :, :]], dim=0
+                [Q[i, :mask_idx, :], Q[i, self.colbert_config.query_maxlen : pad_idx, :]], dim=0
             )  # Shape: (num_non_masks, q_dim)
             masks = Q[
                 i, mask_idx : self.colbert_config.query_maxlen, :
             ]  # Shape: (num_masks, q_dim)
             interaction = masks @ non_masks.T  # Shape: (num_masks, num_non_masks)
-            probs = F.pad(
-                torch.softmax(interaction, dim=1),
+            logits = F.pad(
+                interaction,
                 (
                     0,
                     MAX_ACTIONS - interaction.shape[1],
@@ -100,7 +119,7 @@ class GoalBERT(ColBERT):
                     MAX_MASKS - interaction.shape[0],
                 ),
                 "constant",
-                0,
+                -torch.inf,
             )  # Shape: (MAX_MASKS, MAX_ACTIONS)
             non_masks_padded = torch.zeros((MAX_ACTIONS, non_masks.shape[1]))
             non_masks_padded[: non_masks.shape[0], :] = non_masks
@@ -109,14 +128,19 @@ class GoalBERT(ColBERT):
             action_masks = torch.ones((MAX_MASKS, MAX_ACTIONS), dtype=torch.int)
             action_masks[: interaction.shape[0], : interaction.shape[1]] = 0
 
-            probs_all.append(probs)
+            # Mask out pruned non-MASK indices
+            prune_threshold = 0.2
+            should_prune = ((((non_masks_padded @ non_masks_padded.T) >= (1 - prune_threshold)).triu().sum(-1) - 1).clamp(0, None)).bool().cpu()
+            action_masks[:, should_prune] = 1
+
+            logits_all.append(logits)
             action_masks_all.append(action_masks)
             non_masks_all.append(non_masks_padded)
-        probs_arr = torch.stack(probs_all)
-        action_masks_arr = torch.stack(action_masks_all)
+        logits_arr = torch.stack(logits_all)
+        action_masks_arr = torch.stack(action_masks_all).bool()
         non_masks_arr = torch.stack(non_masks_all)
 
-        return probs_arr, action_masks_arr, non_masks_arr
+        return logits_arr, action_masks_arr, non_masks_arr
 
     def query(
         self,
@@ -125,17 +149,17 @@ class GoalBERT(ColBERT):
         idxs=None,  # Shape: (num_queries, num_masks)
     ):
         new_Q = []
-        probs_all, act_masks_all, non_masks_all = self.compute_probs(
+        logits_all, act_masks_all, non_masks_all = self.compute_logits(
             input_ids, attention_mask
         )
-        for i, (probs, act_masks, non_masks) in enumerate(
-            zip(probs_all, act_masks_all, non_masks_all)
+        for i, (logits, act_masks, non_masks) in enumerate(
+            zip(logits_all, act_masks_all, non_masks_all)
         ):
             if idxs is not None:
                 selected = torch.tensor(idxs[i]).long()
             else:
-                distr = probs_act_masks_to_distrs(
-                    probs.unsqueeze(0), act_masks.unsqueeze(0)
+                distr = logits_act_masks_to_distrs(
+                    logits.unsqueeze(0), act_masks.unsqueeze(0)
                 )[0]
                 selected = distr.sample().long()  # Shape: (num_masks,)
             selected = selected.to(non_masks.device)

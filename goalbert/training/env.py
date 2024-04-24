@@ -15,7 +15,7 @@ from goalbert.training.goalbert import (
     MAX_ACTIONS,
     MAX_MASKS,
     GoalBERT,
-    probs_act_masks_to_distrs,
+    logits_act_masks_to_distrs,
 )
 from goalbert.eval import metrics
 from query_colbert import load_collectionX
@@ -135,9 +135,11 @@ class GoalBERTEnv(gym.Env):
             else ((self.reward_depth - closest_rank) / self.reward_depth)
         )
 
-        # Greedily select fact.
+        # Greedily select fact, skipping ones we already chose.
         # If the closest fact was very close to being selected, add it to the seen facts so we don't select it again.
-        fact_idx = doc_ids[0]
+        fact_idx = doc_ids.pop(0)
+        while fact_idx in self.seen_facts:
+            fact_idx = doc_ids.pop(0)
         self.context.append(self.shared.fact_index.get_fact_str(fact_idx))
         self.context_facts.append(fact_idx)
         if closest_rank is not None and closest_rank < 10:
@@ -223,10 +225,10 @@ def test():
 
     obs, _ = env.reset()
     for i in range(10):
-        probs_all, act_masks_all, _ = searcher.compute_probs(
+        logits_all, act_masks_all, _ = searcher.compute_logits(
             obs[0], context=fmt_context(obs[1])
         )
-        action_distr = probs_act_masks_to_distrs(probs_all, act_masks_all)[0]
+        action_distr = logits_act_masks_to_distrs(logits_all, act_masks_all)[0]
         actions = action_distr.sample().tolist()
         obs, reward, done, trunc, _ = env.step(actions)
         print("Step:", i)

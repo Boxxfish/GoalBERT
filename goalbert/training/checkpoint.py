@@ -41,7 +41,7 @@ class GCheckpoint(GoalBERT):
 
                 return D
 
-    def compute_probs_from_text(
+    def compute_logits_from_text(
         self,
         queries,
         context=None,
@@ -52,7 +52,7 @@ class GCheckpoint(GoalBERT):
         input_ids, attention_mask = self.query_tokenizer.tensorize(
             queries, context=context, full_length_search=full_length_search
         )
-        return self.compute_probs(input_ids, attention_mask)
+        return self.compute_logits(input_ids, attention_mask)
 
     def queryFromText(
         self,

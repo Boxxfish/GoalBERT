@@ -28,7 +28,7 @@ from goalbert.training.env import (
     SharedResources,
     fmt_context,
 )
-from goalbert.training.goalbert import MAX_MASKS, probs_act_masks_to_distrs
+from goalbert.training.goalbert import MAX_MASKS, logits_act_masks_to_distrs, logits_act_masks_to_masked_probs
 from goalbert.training.ppo import train_ppo
 from goalbert.training.rollout_buffer import RolloutBuffer
 
@@ -118,20 +118,20 @@ def main():
             for _ in tqdm(
                 range(config.training.train_steps), position=1, desc=f"Iter {iter_idx}"
             ):
-                probs_all, act_masks_all, _ = searcher.compute_probs(
+                logits_all, act_masks_all, _ = searcher.compute_logits(
                     list(obs[0]),
                     context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]],
                 )
 
                 # Compute original non-MASK embeddings
                 searcher.checkpoint = goalbert_orig
-                non_masks_orig_all = searcher.compute_probs(
+                non_masks_orig_all = searcher.compute_logits(
                     list(obs[0]),
                     context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]],
                 )[2]
                 searcher.checkpoint = goalbert
 
-                action_distrs = probs_act_masks_to_distrs(probs_all, act_masks_all)
+                action_distrs = logits_act_masks_to_distrs(logits_all, act_masks_all)
                 input_ids, attention_mask = goalbert.query_tokenizer.tensorize(
                     list(obs[0]),
                     context=[fmt_context(ctx) if ctx else "" for ctx in obs[1]],
@@ -154,7 +154,7 @@ def main():
                     torch.tensor(
                         [q_acts + [0] * (MAX_MASKS - len(q_acts)) for q_acts in actions]
                     ),
-                    probs_all,
+                    logits_act_masks_to_masked_probs(logits_all, act_masks_all),
                     rewards,
                     dones,
                     truncs,
@@ -218,11 +218,11 @@ def main():
                 for _ in range(config.eval_runs):
                     eval_obs = test_env.reset()[0]
                     while True:
-                        probs_all, act_masks_all, _ = searcher.compute_probs(
+                        logits_all, act_masks_all, _ = searcher.compute_logits(
                             [eval_obs[0]],
                             context=[fmt_context(eval_obs[1])] if eval_obs[1] else None,
                         )
-                        action_distrs = probs_act_masks_to_distrs(probs_all, act_masks_all)
+                        action_distrs = logits_act_masks_to_distrs(logits_all, act_masks_all)
                         input_ids, attention_mask = goalbert.query_tokenizer.tensorize(
                             [eval_obs[0]],
                             context=[fmt_context(eval_obs[1])] if eval_obs[1] else None,
