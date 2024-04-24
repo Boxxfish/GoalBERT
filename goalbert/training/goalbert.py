@@ -91,20 +91,16 @@ class GoalBERT(ColBERT):
         # For each [MASK], generate a distribution over all non-[MASK] tokens and greedy select.
         # Non-[MASK]s include context.
         MASK = 103
-        PAD = 0
         mask_idxs = (
             (input_ids == MASK).int().argmax(1).cpu().tolist()
         )  # List of the first [MASK] in each query
-        pad_idxs = (
-            (input_ids == PAD).int().argmax(1).cpu().tolist()
-        )  # List of the first [PAD] in each query
         logits_all = []
         action_masks_all = []
         non_masks_all = []
-        for i, (mask_idx, pad_idx) in enumerate(zip(mask_idxs, pad_idxs)):
+        for i, mask_idx in enumerate(mask_idxs):
             # Compute probabilities
             non_masks = torch.concat(
-                [Q[i, :mask_idx, :], Q[i, self.colbert_config.query_maxlen : pad_idx, :]], dim=0
+                [Q[i, :mask_idx, :], Q[i, self.colbert_config.query_maxlen :, :]], dim=0
             )  # Shape: (num_non_masks, q_dim)
             masks = Q[
                 i, mask_idx : self.colbert_config.query_maxlen, :
