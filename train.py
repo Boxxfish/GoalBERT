@@ -72,11 +72,11 @@ def main():
     shared = SharedResources(searcher, fact_index, q_index)
     env = gym.vector.SyncVectorEnv(
         [
-            lambda: GoalBERTEnv(goalbert, shared=shared)
+            lambda: GoalBERTEnv(goalbert, shared=shared, max_hops=config.max_hops)
             for _ in range(config.training.num_envs)
         ]
     )
-    test_env = GoalBERTEnv(goalbert, shared=shared)
+    test_env = GoalBERTEnv(goalbert, shared=shared, max_hops=config.max_hops)
 
     v_net = ValueNet()
     if config.v_net_finetune:

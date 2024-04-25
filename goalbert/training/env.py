@@ -91,6 +91,7 @@ class GoalBERTEnv(gym.Env):
         goalbert: GoalBERT,
         shared: SharedResources,
         reward_depth: int = 100,  # Cutoff for reward
+        max_hops: int = 4,  # Maximum number of hops to perform (impacts data)
     ):
         super().__init__()
         self.hops = 0
@@ -100,6 +101,7 @@ class GoalBERTEnv(gym.Env):
         self.shared = shared
         self.goalbert = goalbert
         self.qa = None
+        self.max_hops = max_hops
         self.support_facts = []
         self.reward_depth = reward_depth
         self.observation_space = gym.spaces.Tuple(
@@ -165,7 +167,7 @@ class GoalBERTEnv(gym.Env):
                 self.shared.fact_index.valid_pid_sid(tuple(pid_qid))
                 for pid_qid in self.qa.support_facts
             ]
-        ) or (attention_mask.sum().item() >= MAX_MASKS - 4):
+        ) or (attention_mask.sum().item() >= MAX_MASKS - 4) or self.qa.num_hops > self.max_hops:
             self.qa = self.shared.q_index.random()
             _, attention_mask = (
                 self.shared.searcher.checkpoint.query_tokenizer.tensorize(
