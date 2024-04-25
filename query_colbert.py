@@ -12,6 +12,8 @@ from tqdm import tqdm
 import ujson  # type: ignore
 from matplotlib import pyplot as plt # type: ignore
 import matplotlib
+
+from goalbert.config import GoalBERTConfig
 matplotlib.use('TkAgg')
 from transformers import AutoTokenizer # type: ignore
 
@@ -53,6 +55,7 @@ def main():
     parser.add_argument("--goalbert", action="store_true")
     parser.add_argument("--visualize-distrs", action="store_true")
     parser.add_argument("--checkpoint")
+    parser.add_argument("--num_masks", default=None, type=int)
     parser.add_argument("--hops", type=int, default=1)
     args = parser.parse_args()
 
@@ -70,13 +73,17 @@ def main():
         if args.goalbert:
             if args.checkpoint:
                 colbert = searcher.checkpoint
-                goalbert = GCheckpoint(colbert.name, colbert_config=config)
+                goalbert_cfg = GoalBERTConfig()
+                goalbert_cfg.num_masks = args.num_masks or 0
+                goalbert = GCheckpoint(colbert.name, colbert_config=config, goalbert_config=goalbert_cfg)
                 goalbert.load_state_dict(load_file(args.checkpoint))
                 searcher.checkpoint = goalbert
                 del colbert
             else:
                 colbert = searcher.checkpoint
-                goalbert = GCheckpoint(colbert.name, colbert_config=config)
+                goalbert_cfg = GoalBERTConfig()
+                goalbert_cfg.num_masks = args.num_masks or 0
+                goalbert = GCheckpoint(colbert.name, colbert_config=config, goalbert_config=goalbert_cfg)
                 goalbert.load_state_dict(colbert.state_dict())
                 searcher.checkpoint = goalbert
                 del colbert
@@ -110,7 +117,7 @@ def main():
                     )
                     toks = tokenizer.convert_ids_to_tokens(input_ids[0])
                     distrs = action_distrs[0]
-                    n_plots = 2#distrs.probs.shape[0]
+                    n_plots = goalbert_cfg.num_masks or 1
                     fig, axs = plt.subplots(n_plots, 1, figsize=(8, 4 * n_plots), tight_layout=True)
                     first_mask = toks.index("[MASK]")
                     if i > 0:

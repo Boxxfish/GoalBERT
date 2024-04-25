@@ -14,8 +14,8 @@ class GCheckpoint(GoalBERT):
     Easy inference with GoalBERT.
     """
 
-    def __init__(self, name, colbert_config=None, verbose: int = 3):
-        super().__init__(name, colbert_config)
+    def __init__(self, name, colbert_config=None, verbose: int = 3, goalbert_config=None):
+        super().__init__(name, colbert_config, goalbert_config)
         assert self.training is False
 
         self.verbose = verbose

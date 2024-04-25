@@ -10,10 +10,9 @@ import torch
 from colbert.infra.config.config import ColBERTConfig, RunConfig
 from colbert.infra.run import Run
 from colbert.searcher import Searcher
+from goalbert.config import GoalBERTConfig
 from goalbert.training.checkpoint import GCheckpoint
 from goalbert.training.goalbert import (
-    MAX_ACTIONS,
-    MAX_MASKS,
     GoalBERT,
     logits_act_masks_to_distrs,
 )
@@ -90,10 +89,12 @@ class GoalBERTEnv(gym.Env):
         self,
         goalbert: GoalBERT,
         shared: SharedResources,
+        config: GoalBERTConfig,
         reward_depth: int = 100,  # Cutoff for reward
         max_hops: int = 4,  # Maximum number of hops to perform (impacts data)
     ):
         super().__init__()
+        self.config = config
         self.hops = 0
         self.context = []
         self.context_facts = []
@@ -105,9 +106,9 @@ class GoalBERTEnv(gym.Env):
         self.support_facts = []
         self.reward_depth = reward_depth
         self.observation_space = gym.spaces.Tuple(
-            [gym.spaces.Text(MAX_MASKS), gym.spaces.Sequence(gym.spaces.Text(MAX_ACTIONS))]
+            [gym.spaces.Text(config.query_maxlen), gym.spaces.Sequence(gym.spaces.Text(config.training.max_input_ids))]
         )
-        self.action_space = gym.spaces.MultiDiscrete([MAX_MASKS, MAX_ACTIONS])
+        self.action_space = gym.spaces.MultiDiscrete([config.query_maxlen, config.training.max_input_ids])
 
     @torch.no_grad()
     def step(
@@ -167,7 +168,7 @@ class GoalBERTEnv(gym.Env):
                 self.shared.fact_index.valid_pid_sid(tuple(pid_qid))
                 for pid_qid in self.qa.support_facts
             ]
-        ) or (attention_mask.sum().item() >= MAX_MASKS - 4) or self.qa.num_hops > self.max_hops:
+        ) or (attention_mask.sum().item() >= self.config.query_maxlen - 4) or self.qa.num_hops > self.max_hops:
             self.qa = self.shared.q_index.random()
             _, attention_mask = (
                 self.shared.searcher.checkpoint.query_tokenizer.tensorize(

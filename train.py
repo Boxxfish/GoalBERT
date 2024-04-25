@@ -9,7 +9,6 @@ from goalbert.config import GoalBERTConfig
 
 import torch
 from torch import nn
-from torch.distributions import Categorical
 from tqdm import tqdm
 import gymnasium as gym
 import wandb
@@ -28,7 +27,7 @@ from goalbert.training.env import (
     SharedResources,
     fmt_context,
 )
-from goalbert.training.goalbert import MAX_MASKS, logits_act_masks_to_distrs, logits_act_masks_to_masked_probs
+from goalbert.training.goalbert import logits_act_masks_to_distrs, logits_act_masks_to_masked_probs
 from goalbert.training.ppo import train_ppo
 from goalbert.training.rollout_buffer import RolloutBuffer
 
@@ -58,25 +57,25 @@ def main():
     with Run().context(RunConfig(nranks=1, experiment="wiki2017")):
         config_ = ColBERTConfig(
             root="./index",
-            query_maxlen=64,
+            query_maxlen=config.query_maxlen,
         )
         searcher = Searcher(index="wiki2017.nbits=2", config=config_)
         colbert = searcher.checkpoint
-        goalbert_orig = GCheckpoint(colbert.name, colbert_config=config_)
+        goalbert_orig = GCheckpoint(colbert.name, colbert_config=config_, goalbert_config=config)
         goalbert_orig.to("cuda:2")
         goalbert_orig.load_state_dict(colbert.state_dict())
-        goalbert = GCheckpoint(colbert.name, colbert_config=config_)
+        goalbert = GCheckpoint(colbert.name, colbert_config=config_, goalbert_config=config)
         goalbert.load_state_dict(colbert.state_dict())
         searcher.checkpoint = goalbert
         del colbert
     shared = SharedResources(searcher, fact_index, q_index)
     env = gym.vector.SyncVectorEnv(
         [
-            lambda: GoalBERTEnv(goalbert, shared=shared, max_hops=config.max_hops)
+            lambda: GoalBERTEnv(goalbert, shared=shared, config=config, max_hops=config.max_hops)
             for _ in range(config.training.num_envs)
         ]
     )
-    test_env = GoalBERTEnv(goalbert, shared=shared, max_hops=config.max_hops)
+    test_env = GoalBERTEnv(goalbert, shared=shared, config=config, max_hops=config.max_hops)
 
     v_net = ValueNet()
     if config.v_net_finetune:
@@ -86,7 +85,7 @@ def main():
     p_opt = torch.optim.Adam(goalbert.parameters(), lr=config.training.p_lr)
 
     buffer = RolloutBuffer(
-        MAX_MASKS,
+        config.query_maxlen,
         config.training.max_input_ids,
         config.training.num_envs,
         config.training.train_steps,
@@ -152,7 +151,7 @@ def main():
                     input_ids_padded,
                     attn_masks_padded,
                     torch.tensor(
-                        [q_acts + [0] * (MAX_MASKS - len(q_acts)) for q_acts in actions]
+                        [q_acts + [0] * (config.query_maxlen - len(q_acts)) for q_acts in actions]
                     ),
                     logits_act_masks_to_masked_probs(logits_all, act_masks_all),
                     rewards,

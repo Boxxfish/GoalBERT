@@ -4,8 +4,7 @@ from typing import *
 import torch
 import torch.nn.functional as F
 
-MAX_MASKS = 64
-MAX_ACTIONS = 512
+from goalbert.config import GoalBERTConfig
 
 
 def logits_act_masks_to_distrs(
@@ -45,8 +44,10 @@ class GoalBERT(ColBERT):
     A modified version of ColBERT, that uses only [MASK]s to generate queries.
     """
 
-    def __init__(self, name="bert-base-uncased", colbert_config=None):
+    def __init__(self, name="bert-base-uncased", colbert_config=None, goalbert_config: Optional[GoalBERTConfig]=None):
         super().__init__(name, colbert_config)
+        assert goalbert_config is not None
+        self.goalbert_config = goalbert_config
 
     def forward(self, Q, D):
         Q = self.query(*Q)
@@ -110,19 +111,19 @@ class GoalBERT(ColBERT):
                 interaction,
                 (
                     0,
-                    MAX_ACTIONS - interaction.shape[1],
+                    self.goalbert_config.training.max_input_ids - interaction.shape[1],
                     0,
-                    MAX_MASKS - interaction.shape[0],
+                    self.goalbert_config.query_maxlen - interaction.shape[0],
                 ),
                 "constant",
                 -torch.inf,
             )  # Shape: (MAX_MASKS, MAX_ACTIONS)
-            non_masks_padded = torch.zeros((MAX_ACTIONS, non_masks.shape[1]))
+            non_masks_padded = torch.zeros((self.goalbert_config.training.max_input_ids, non_masks.shape[1]))
             non_masks_padded[: non_masks.shape[0], :] = non_masks
 
             # Compute action masks
-            action_masks = torch.ones((MAX_MASKS, MAX_ACTIONS), dtype=torch.int)
-            action_masks[: interaction.shape[0], : interaction.shape[1]] = 0
+            action_masks = torch.ones((self.goalbert_config.query_maxlen, self.goalbert_config.training.max_input_ids), dtype=torch.int)
+            action_masks[: self.goalbert_config.num_masks or interaction.shape[0], : interaction.shape[1]] = 0
 
             # Mask out pruned non-MASK indices
             prune_threshold = 0.2

@@ -7,8 +7,6 @@ from typing_extensions import Self
 import torch
 from typing import *
 
-from goalbert.training.goalbert import MAX_ACTIONS
-
 
 class BaseConfig:
     def __init__(self, **kwargs):
@@ -94,7 +92,7 @@ class TrainingConfig(BaseConfig):
     p_lr: float = 0.000005  # Learning rate of the policy net.
     distill_coeff: float = 3.0  # Cosine maximization applied to non-MASKs.
     gradient_steps: int = 8  # Number of gradient steps before optimizing.
-    max_input_ids: int = MAX_ACTIONS  # Maxmimum # of input IDs.
+    max_input_ids: int = 512  # Maxmimum # of input IDs.
     value_warmup: int = 0 # Number of iterations to train just the value network at the beginning, to give the baseline a head start.
     p_grad_clip: float = 1000.0 # The gradient clipping applied to the policy network.
     entropy_coeff: float = 0.003
@@ -113,6 +111,8 @@ class GoalBERTConfig(BaseConfig):
     eval_runs: int = 100
     v_net_finetune: str = ""
     max_hops: int = 4
+    num_masks: int = 0 # Number of [MASK]s to use. If 0, we use all [MASK]s.
+    query_maxlen: int = 64
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
