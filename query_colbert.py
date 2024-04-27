@@ -14,7 +14,6 @@ from matplotlib import pyplot as plt # type: ignore
 import matplotlib
 
 from goalbert.config import GoalBERTConfig
-matplotlib.use('TkAgg')
 from transformers import AutoTokenizer # type: ignore
 
 from goalbert.training.checkpoint import GCheckpoint
@@ -89,6 +88,7 @@ def main():
                 del colbert
 
         tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+        matplotlib.use("TkAgg")
         while True:
             query = input("> ")
             context = []

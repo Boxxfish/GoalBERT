@@ -123,7 +123,7 @@ class GoalBERT(ColBERT):
 
             # Compute action masks
             action_masks = torch.ones((self.goalbert_config.query_maxlen, self.goalbert_config.training.max_input_ids), dtype=torch.int)
-            action_masks[: self.goalbert_config.num_masks or interaction.shape[0], : interaction.shape[1]] = 0
+            action_masks[: min(self.goalbert_config.num_masks, interaction.shape[0]) or interaction.shape[0], : interaction.shape[1]] = 0
 
             # Mask out pruned non-MASK indices
             prune_threshold = 0.2
