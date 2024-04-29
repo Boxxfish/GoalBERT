@@ -82,6 +82,10 @@ def main():
             plt.scatter(xformed_embs[first_ctx:, 0], xformed_embs[first_ctx:, 1], c="black")
         plt.scatter(xformed_embs[first_mask:first_mask + args.num_masks, 0], xformed_embs[first_mask:first_mask + args.num_masks, 1], c="red")
         
+        ax = plt.gca()
+        ax.set_xlim([-0.9, 0.9])
+        ax.set_ylim([-0.9, 0.9])
+
         toks = checkpoint.query_tokenizer.tok.convert_ids_to_tokens(input_ids)
         for i in range(0, first_mask):
             plt.annotate(toks[i], xformed_embs[i])
