@@ -20,9 +20,9 @@ from colbert.modeling.checkpoint import Checkpoint
 from goalbert.config import GoalBERTConfig
 from goalbert.training.checkpoint import GCheckpoint
 
-def query_to_embs(query: str, checkpoint: GCheckpoint) -> Tuple[torch.Tensor, torch.Tensor]:
+def query_to_embs(query: str, checkpoint: GCheckpoint, context) -> Tuple[torch.Tensor, torch.Tensor]:
     input_ids, attention_mask = checkpoint.query_tokenizer.tensorize(
-        [query], context=None,
+        [query], context=None if context is None else [context],
     )
     embs = checkpoint.query(input_ids, attention_mask)
     return embs[0].cpu().numpy(), input_ids[0].cpu().numpy()
@@ -48,6 +48,7 @@ def main():
     parser.add_argument("--num-masks", type=int, default=1)
     parser.add_argument("--step-size", type=int, default=50)
     parser.add_argument("--query", type=str, default="Before I Go to Sleep stars an Australian actress, producer and occasional singer.")
+    parser.add_argument("--context", type=str, default=None)
     args = parser.parse_args()
 
     out_dir = Path(args.out) / args.name
@@ -60,7 +61,7 @@ def main():
     checkpoint = load_checkpoint(exp_path, 0)
 
     # Train PCA on first query
-    embs, input_ids = query_to_embs(args.query, checkpoint) # Shape: (num_embs, emb_dim)
+    embs, input_ids = query_to_embs(args.query, checkpoint, args.context) # Shape: (num_embs, emb_dim)
     pca = PCA(2)
     pca.fit(embs)
 
@@ -70,17 +71,23 @@ def main():
     img_idxs = []
     while (exp_path / "checkpoints" / f"goalbert-{chkpt_idx}.safetensors").exists():
         checkpoint = load_checkpoint(exp_path, chkpt_idx)
-        embs, input_ids = query_to_embs(args.query, checkpoint) # Shape: (num_embs, emb_dim)
-        last_mask = (input_ids == MASK).argmax(0)
+        embs, input_ids = query_to_embs(args.query, checkpoint, args.context) # Shape: (num_embs, emb_dim)
+        first_mask = (input_ids == MASK).argmax(0)
+        first_ctx = 64
         xformed_embs = pca.transform(embs)
         nline = "\n"
         plt.title(f"\"{nline.join(wrap(args.query, 40))}\"\nIteration {chkpt_idx}")
-        plt.scatter(xformed_embs[:last_mask, 0], xformed_embs[:last_mask, 1], c="black")
-        plt.scatter(xformed_embs[last_mask:last_mask + args.num_masks, 0], xformed_embs[last_mask:last_mask + args.num_masks, 1], c="red")
+        plt.scatter(xformed_embs[:first_mask, 0], xformed_embs[:first_mask, 1], c="black")
+        if args.context:
+            plt.scatter(xformed_embs[first_ctx:, 0], xformed_embs[first_ctx:, 1], c="black")
+        plt.scatter(xformed_embs[first_mask:first_mask + args.num_masks, 0], xformed_embs[first_mask:first_mask + args.num_masks, 1], c="red")
         
         toks = checkpoint.query_tokenizer.tok.convert_ids_to_tokens(input_ids)
-        for i in range(0, last_mask):
+        for i in range(0, first_mask):
             plt.annotate(toks[i], xformed_embs[i])
+        if args.context:
+            for i in range(first_ctx, len(toks)):
+                plt.annotate(toks[i], xformed_embs[i])
         
         plt.savefig(out_dir / f"{chkpt_idx}.png")
         plt.cla()
