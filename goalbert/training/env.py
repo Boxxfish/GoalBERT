@@ -48,6 +48,9 @@ class FactIndex:
 
     def from_pid_sid_to_fact_id(self, pid_sid: Tuple[int, int]) -> int:
         return self.pid_sid_to_sid[pid_sid]
+    
+    def from_sid_to_pid_sid(self, sid: int) -> Tuple[int, int]:
+        return self.sid_to_pid_sid[sid]
 
     def valid_pid_sid(self, pid_sid: Tuple[int, int]) -> bool:
         """
@@ -58,13 +61,19 @@ class FactIndex:
 
 class QuestionIndex:
     def __init__(self, qas_path: str):
-        self.qas = []
+        self.qas: List[QA] = []
+        self.qids_to_idx = {}
         with open(qas_path, "r") as f:
             for line in f:
-                self.qas.append(QA(**json.loads(line)))
+                qa = QA(**json.loads(line))
+                self.qas.append(qa)
+                self.qids_to_idx[qa.qid] = len(self.qas) - 1
 
     def random(self) -> QA:
         return random.choice(self.qas)
+    
+    def from_qid(self, qid: int) -> QA:
+        return self.qas[self.qids_to_idx[qid]]
 
 
 class SharedResources:
