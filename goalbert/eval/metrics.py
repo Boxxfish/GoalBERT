@@ -37,4 +37,4 @@ def em(pred: Set[T], actual: Set[T]) -> float:
     """
     This is a 1 for exact matches, and 0 otherwise.
     """
-    return pred == actual
+    return float(pred == actual)

@@ -83,9 +83,12 @@ def main():
     args = parser.parse_args()
     if args.compare_base:
         print("Changed:")
-        changed = list(perform_test(args))
+        # changed = list(perform_test(args, False))
+        # json.dump(changed, open("changed.json", "w"))
+        changed = json.load(open("changed.json", "r"))
         print("Base:")
-        base = list(perform_test(args))
+        base = list(perform_test(args, True))
+        json.dump(base, open("base.json", "w"))
         
         for label, stat_c, stat_b in zip(labels, changed, base):
             pval = stats.ttest_ind(stat_c, stat_b).pvalue
@@ -93,7 +96,7 @@ def main():
     else:
         perform_test(args)
 
-def perform_test(args):
+def perform_test(args, use_base: bool):
     data_dir = Path(args.datadir)
     qas_path = data_dir / "hover" / args.train_split / "qas.json"
 
@@ -111,10 +114,10 @@ def perform_test(args):
         searcher = Searcher(index="wiki2017.nbits=2", config=config_)
         colbert = searcher.checkpoint
         goalbert = GCheckpoint(colbert.name, colbert_config=config_, goalbert_config=config)
-        if args.checkpoint:
-            goalbert.load_state_dict(load_file(args.checkpoint))
-        else:
+        if use_base:
             goalbert.load_state_dict(colbert.state_dict())
+        else:
+            goalbert.load_state_dict(load_file(args.checkpoint))
         searcher.checkpoint = goalbert
         del colbert
 
