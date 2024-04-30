@@ -45,6 +45,7 @@ def main():
     parser.add_argument("--root", type=str, default="./experiments")
     parser.add_argument("--out", type=str, default="./emb_shift")
     parser.add_argument("--name", type=str)
+    parser.add_argument("--pdf", action="store_true")
     parser.add_argument("--num-masks", type=int, default=1)
     parser.add_argument("--step-size", type=int, default=50)
     parser.add_argument("--query", type=str, default="Before I Go to Sleep stars an Australian actress, producer and occasional singer.")
@@ -87,20 +88,22 @@ def main():
         ax.set_ylim([-0.9, 0.9])
 
         toks = checkpoint.query_tokenizer.tok.convert_ids_to_tokens(input_ids)
+        toks[1] = "[Q]"
         for i in range(0, first_mask):
             plt.annotate(toks[i], xformed_embs[i])
         if args.context:
             for i in range(first_ctx, len(toks)):
                 plt.annotate(toks[i], xformed_embs[i])
         
-        plt.savefig(out_dir / f"{chkpt_idx}.png")
+        plt.savefig(out_dir / f"{chkpt_idx}.{'pdf' if args.pdf else 'png'}")
         plt.cla()
         img_idxs.append(chkpt_idx)
         chkpt_idx += args.step_size
 
     # Create GIF
-    os.chdir(out_dir)
-    os.system(f"convert -delay 20 -loop 0 {' '.join([str(i) + '.png' for i in img_idxs])} animation.gif")
+    if not args.pdf:
+        os.chdir(out_dir)
+        os.system(f"convert -delay 20 -loop 0 {' '.join([str(i) + '.png' for i in img_idxs])} animation.gif")
 
 if __name__ == "__main__":
     main()
