@@ -1,7 +1,9 @@
 """
 Evaluates the trained model on HoVer.
+With this file, we measure R@25, to evaluate its ability to perform initial retrieval.
 """
 from argparse import ArgumentParser
+import copy
 from distutils import config
 import json
 from colbert.data import Queries
@@ -22,13 +24,14 @@ from goalbert.training.env import FactIndex, QuestionIndex, fmt_context
 from goalbert.training.goalbert import logits_act_masks_to_distrs
 from goalbert.eval import metrics
 
-def goalbert_search(query: str, n_hops: int, fact_index: FactIndex, searcher: Searcher) -> Set[Tuple[int, int]]:
+def goalbert_rr(query: str, n_hops: int, fact_index: FactIndex, searcher: Searcher, gold_facts: Set[Tuple[int, int]]) -> List[float]:
     """
-    Given a query and number of hops, returns a set of (pid, sid) pairs.
+    Performs GoalBERT search, reporting the RR@25 across hops.
     """
-    seen_facts: Set[int] = set()
     context_facts = []
     context = []
+    gold_facts = copy.deepcopy(gold_facts)
+    rr = []
     for _ in range(0, n_hops):
         # Compute action indices
         logits_all, act_masks_all, _ = searcher.compute_logits(
@@ -43,35 +46,43 @@ def goalbert_search(query: str, n_hops: int, fact_index: FactIndex, searcher: Se
             query,
             context=fmt_context(context),
             idxs=idxs,
-            k=10,
+            k=25,
         )
         doc_ids: List[int] = ranking[0]
 
-        # Greedily select fact, skipping ones we already chose.
-        fact_idx = doc_ids.pop(0)
-        while fact_idx in seen_facts:
-            fact_idx = doc_ids.pop(0)
+        # Check RR@25 against our gold PIDs
+        rank = 1
+        seen_pids = set()
+        fact_idx = None
+        for idx in doc_ids:
+            pid, _ = fact_index.sid_to_pid_sid[str(idx)]
+            if pid in seen_pids:
+                continue
+            broke = False
+            for gold_pid, gold_sid in gold_facts:
+                if pid == gold_pid:
+                    gold_facts.remove((gold_pid, gold_sid))
+                    fact_idx = idx
+                    rr.append(1 / rank)
+                    broke = True
+                    break
+            if broke:
+                break
+            rank += 1
+
+        # Use closest gold fact, if none were present in top 25, use a gold fact
+        if fact_idx is None:
+            fact_idx = gold_facts.pop()[0]
+            rr.append(0)
         context.append(fact_index.get_fact_str(fact_idx))
         context_facts.append(fact_idx)
-    return set([tuple(fact_index.sid_to_pid_sid[str(sid)]) for sid in context_facts])
+    return rr
 
 labels = [
-    "T Sentence F1",
-    "T Passage F1",
-    "T Sentence EM",
-    "T Passage EM",
-    "2 Sentence F1",
-    "2 Passage F1",
-    "2 Sentence EM",
-    "2 Passage EM",
-    "3 Sentence F1",
-    "3 Passage F1",
-    "3 Sentence EM",
-    "3 Passage EM",
-    "4 Sentence F1",
-    "4 Passage F1",
-    "4 Sentence EM",
-    "4 Passage EM",
+    "T MRR@25",
+    "2-hop MRR@25",
+    "3-hop MRR@25",
+    "4-hop MRR@25",
 ]
 
 def main():
@@ -83,12 +94,12 @@ def main():
     args = parser.parse_args()
     if args.compare_base:
         print("Changed:")
-        # changed = list(perform_test(args, False))
-        # json.dump(changed, open("changed.json", "w"))
-        changed = json.load(open("changed.json", "r"))
+        changed = list(perform_test(args, False))
+        json.dump(changed, open("changed_rr.json", "w"))
+        # changed = json.load(open("changed.json", "r"))
         print("Base:")
         base = list(perform_test(args, True))
-        json.dump(base, open("base.json", "w"))
+        json.dump(base, open("base_rr.json", "w"))
         
         for label, stat_c, stat_b in zip(labels, changed, base):
             pval = stats.ttest_ind(stat_c, stat_b).pvalue
@@ -122,71 +133,36 @@ def perform_test(args, use_base: bool):
         del colbert
 
     torch.manual_seed(100)
-    s_f1_total_hops = [[] for _ in range(5)]
-    p_f1_total_hops = [[] for _ in range(5)]
-    s_em_total_hops = [[] for _ in range(5)]
-    p_em_total_hops = [[] for _ in range(5)]
+    rr_total_hops = [[] for _ in range(5)]
     total_hops = [0] * 5
-    s_f1_total = []
-    p_f1_total = []
-    s_em_total = []
-    p_em_total = []
+    rr_total = []
     total_qas = 0
     for qa in tqdm(q_index.qas):
         try:
             gold_facts = set([(int(pid), int(sid)) for [pid, sid] in qa.support_facts])
             gold_psgs = set([pid for (pid, _) in gold_facts])
-            pred_facts = goalbert_search(qa.question, qa.num_hops, fact_index, searcher)
-            pred_psgs = set([pid for (pid, _) in pred_facts])
-            s_f1 = metrics.f1(pred_facts, gold_facts)
-            p_f1 = metrics.f1(pred_psgs, gold_psgs)
-            s_em = metrics.em(pred_facts, gold_facts)
-            p_em = metrics.em(pred_psgs, gold_psgs)
-            s_f1_total_hops[qa.num_hops] += [s_f1]
-            p_f1_total_hops[qa.num_hops] += [p_f1]
-            s_em_total_hops[qa.num_hops] += [s_em]
-            p_em_total_hops[qa.num_hops] += [p_em]
-            s_f1_total += [s_f1]
-            p_f1_total += [p_f1]
-            s_em_total += [s_em]
-            p_em_total += [p_em]
+            rrs = goalbert_rr(qa.question, qa.num_hops, fact_index, searcher, gold_facts)
+            rr_total_hops[qa.num_hops] += rrs
+            rr_total += rrs
         except Exception as e:
             print("Exception (likely not enough masks):", e)
-        total_qas += 1
-        total_hops[qa.num_hops] += 1
+        total_qas += qa.num_hops
+        total_hops[qa.num_hops] += qa.num_hops
 
-    print("Total Sentence F1:", sum(s_f1_total, 0.0) / total_qas)
-    print("Total Passage F1:", sum(p_f1_total, 0.0) / total_qas)
-    print("Total Sentence EM:", sum(s_em_total, 0.0) / total_qas)
-    print("Total Passage EM:", sum(p_em_total, 0.0) / total_qas)
+    print("Total MRR@25:", sum(rr_total, 0.0) / total_qas)
     print(f"Total Count:", total_qas)
     for i in range(2, 5):
-        print(f"{i}-hop Sentence F1:", sum(s_f1_total_hops[i], 0.0) / total_hops[i])
-        print(f"{i}-hop Passage F1:", sum(p_f1_total_hops[i], 0.0) / total_hops[i])
-        print(f"{i}-hop Sentence EM:", sum(s_em_total_hops[i], 0.0) / total_hops[i])
-        print(f"{i}-hop Passage EM:", sum(p_em_total_hops[i], 0.0) / total_hops[i])
+        print(f"{i}-hop Sentence F1:", sum(rr_total_hops[i], 0.0) / total_hops[i])
         print(f"{i}-hop Count:", total_hops[i])
     return (
-        s_f1_total,
-        p_f1_total,
-        s_em_total,
-        p_em_total,
+        rr_total,
 
-        s_f1_total_hops[2],
-        p_f1_total_hops[2],
-        s_em_total_hops[2],
-        p_em_total_hops[2],
+        rr_total_hops[2],
         
-        s_f1_total_hops[3],
-        p_f1_total_hops[3],
-        s_em_total_hops[3],
-        p_em_total_hops[3],
+        rr_total_hops[3],
         
-        s_f1_total_hops[4],
-        p_f1_total_hops[4],
-        s_em_total_hops[4],
-        p_em_total_hops[4],
-        )
+        rr_total_hops[4],
+    )
 
 if __name__ == "__main__":
     main()
