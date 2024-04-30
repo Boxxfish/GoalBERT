@@ -14,6 +14,7 @@ from typing import *
 import torch
 from safetensors.torch import load_file
 from scipy import stats
+from dataclasses import dataclass
 
 from colbert.infra.config.config import ColBERTConfig, RunConfig
 from colbert.infra.run import Run
@@ -23,6 +24,25 @@ from goalbert.training.checkpoint import GCheckpoint
 from goalbert.training.env import FactIndex, QuestionIndex, fmt_context
 from goalbert.training.goalbert import logits_act_masks_to_distrs
 from goalbert.eval import metrics
+
+@dataclass
+class Hop:
+    c_toks: List[str]
+    q_matches: List[List[int]]
+    c_matches: List[List[int]]
+    ranking: List[List] # [score, title]
+    stage1: List[List]
+    stage2: List[List]
+    new_ctx: str
+
+@dataclass
+class FLIPRRanking:
+    query: str
+    hops: List[Hop]
+
+    def __init__(self, query: str, hops: Mapping[str, Any]):
+        self.query = query
+        self.hops = [Hop(**h) for h in hops]
 
 def goalbert_rr(query: str, n_hops: int, fact_index: FactIndex, searcher: Searcher, gold_facts: Set[Tuple[int, int]]) -> List[float]:
     """
@@ -78,6 +98,27 @@ def goalbert_rr(query: str, n_hops: int, fact_index: FactIndex, searcher: Search
         context_facts.append(fact_idx)
     return rr
 
+def flipr_rr(ranking_file: FLIPRRanking, n_hops: int, title_to_pid: Mapping[str, int], fact_index: FactIndex, gold_facts: Set[Tuple[int, int]]) -> List[float]:
+    """
+    Using a ranking file, reports the RR@25 across hops.
+    """
+    gold_facts = copy.deepcopy(gold_facts)
+    rr = []
+    for i in range(0, n_hops):
+        hop = ranking_file.hops[i]
+
+        # Check RR@25 against our gold PIDs
+        for j, [score, title] in enumerate(hop.ranking):
+            rank = j + 1
+            pid = title_to_pid[title]
+            broke = False
+            for gold_pid, gold_sid in gold_facts:
+                if pid == gold_pid:
+                    gold_facts.remove((gold_pid, gold_sid))
+                    rr.append(1 / rank)
+                    break
+    return rr
+
 labels = [
     "T MRR@25",
     "2-hop MRR@25",
@@ -89,6 +130,7 @@ def main():
     parser = ArgumentParser()
     parser.add_argument("--datadir", type=str)
     parser.add_argument("--checkpoint", type=str, default=None)
+    parser.add_argument("--flipr", default=False, action="store_true")
     parser.add_argument("--train-split", type=str, default="dev")
     parser.add_argument("--compare-base", default=False, action="store_true")
     args = parser.parse_args()
@@ -111,26 +153,34 @@ def perform_test(args, use_base: bool):
     data_dir = Path(args.datadir)
     qas_path = data_dir / "hover" / args.train_split / "qas.json"
 
+    title_to_pid = {}
+    print("Building title to PID mapping...")
+    with open("../wiki.abstracts.2017/collection.json", "r") as f:
+        for line in tqdm(f):
+            pair = json.loads(line)
+            title_to_pid[pair["title"]] = pair["pid"]
+
     # Load GoalBERT
     fact_index = FactIndex(
         "../sid_to_pid_sid.json", "../wiki.abstracts.2017/collection.json"
     )
     q_index = QuestionIndex(qas_path)
-    config = GoalBERTConfig(**json.load(open(Path(args.checkpoint).parent.parent / "config.json", "r")))
-    with Run().context(RunConfig(nranks=1, experiment="wiki2017")):
-        config_ = ColBERTConfig(
-            root="./index",
-            query_maxlen=config.query_maxlen,
-        )
-        searcher = Searcher(index="wiki2017.nbits=2", config=config_)
-        colbert = searcher.checkpoint
-        goalbert = GCheckpoint(colbert.name, colbert_config=config_, goalbert_config=config)
-        if use_base:
-            goalbert.load_state_dict(colbert.state_dict())
-        else:
-            goalbert.load_state_dict(load_file(args.checkpoint))
-        searcher.checkpoint = goalbert
-        del colbert
+    if not args.flipr:
+        config = GoalBERTConfig(**json.load(open(Path(args.checkpoint).parent.parent / "config.json", "r")))
+        with Run().context(RunConfig(nranks=1, experiment="wiki2017")):
+            config_ = ColBERTConfig(
+                root="./index",
+                query_maxlen=config.query_maxlen,
+            )
+            searcher = Searcher(index="wiki2017.nbits=2", config=config_)
+            colbert = searcher.checkpoint
+            goalbert = GCheckpoint(colbert.name, colbert_config=config_, goalbert_config=config)
+            if use_base:
+                goalbert.load_state_dict(colbert.state_dict())
+            else:
+                goalbert.load_state_dict(load_file(args.checkpoint))
+            searcher.checkpoint = goalbert
+            del colbert
 
     torch.manual_seed(100)
     rr_total_hops = [[] for _ in range(5)]
@@ -141,7 +191,11 @@ def perform_test(args, use_base: bool):
         try:
             gold_facts = set([(int(pid), int(sid)) for [pid, sid] in qa.support_facts])
             gold_psgs = set([pid for (pid, _) in gold_facts])
-            rrs = goalbert_rr(qa.question, qa.num_hops, fact_index, searcher, gold_facts)
+            if not args.flipr:
+                rrs = goalbert_rr(qa.question, qa.num_hops, fact_index, searcher, gold_facts)
+            else:
+                ranking_file = FLIPRRanking(**json.load(open(f"../Baleen/vis_data/{qa.qid}.json", "r")))
+                rrs = flipr_rr(ranking_file, qa.num_hops, title_to_pid, fact_index, gold_facts)
             rr_total_hops[qa.num_hops] += rrs
             rr_total += rrs
         except Exception as e:
