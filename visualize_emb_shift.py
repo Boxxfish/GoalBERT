@@ -20,7 +20,7 @@ from colbert.modeling.checkpoint import Checkpoint
 from goalbert.config import GoalBERTConfig
 from goalbert.training.checkpoint import GCheckpoint
 
-def query_to_embs(query: str, checkpoint: GCheckpoint, context) -> Tuple[torch.Tensor, torch.Tensor]:
+def query_to_embs(query: str, checkpoint: GCheckpoint, context) -> Tuple[np.ndarray, np.ndarray]:
     input_ids, attention_mask = checkpoint.query_tokenizer.tensorize(
         [query], context=None if context is None else [context],
     )
@@ -76,12 +76,19 @@ def main():
         first_mask = (input_ids == MASK).argmax(0)
         first_ctx = 64
         xformed_embs = pca.transform(embs)
+        
+        prune_threshold = 0.2
+        # should_prune = ((np.triu(((embs @ embs.T) >= (1 - prune_threshold))).sum(-1) - 1).clip(0, None)).tolist()
+        should_prune_idxs = set() #set(map(lambda x: x[0], filter(lambda x: x[1] > 0, enumerate(should_prune))))
+        
         nline = "\n"
         plt.title(f"\"{nline.join(wrap(args.query, 40))}\"\nIteration {chkpt_idx}")
+        
         plt.scatter(xformed_embs[:first_mask, 0], xformed_embs[:first_mask, 1], c="black")
         if args.context:
             plt.scatter(xformed_embs[first_ctx:, 0], xformed_embs[first_ctx:, 1], c="black")
-        plt.scatter(xformed_embs[first_mask:first_mask + args.num_masks, 0], xformed_embs[first_mask:first_mask + args.num_masks, 1], c="red")
+        num_masks = min(args.num_masks, first_ctx - first_mask)
+        plt.scatter(xformed_embs[first_mask:first_mask + num_masks, 0], xformed_embs[first_mask:first_mask + num_masks, 1], c="red")
         
         ax = plt.gca()
         ax.set_xlim([-0.9, 0.9])
@@ -90,10 +97,12 @@ def main():
         toks = checkpoint.query_tokenizer.tok.convert_ids_to_tokens(input_ids)
         toks[1] = "[Q]"
         for i in range(0, first_mask):
-            plt.annotate(toks[i], xformed_embs[i])
+            if i not in should_prune_idxs:
+                plt.annotate(toks[i], xformed_embs[i])
         if args.context:
             for i in range(first_ctx, len(toks)):
-                plt.annotate(toks[i], xformed_embs[i])
+                if i not in should_prune_idxs:
+                    plt.annotate(toks[i], xformed_embs[i])
         
         plt.savefig(out_dir / f"{chkpt_idx}.{'pdf' if args.pdf else 'png'}")
         plt.cla()

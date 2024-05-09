@@ -105,10 +105,15 @@ def train_ppo(
                 term1 = (new_act_probs - old_act_probs).exp() * advantages.squeeze()
                 term2 = (1.0 + epsilon * advantages.squeeze().sign()) * advantages.squeeze()
                 
+                # Compute distillation loss
                 non_masks_flat = non_masks.flatten(0, 1)
                 new_non_masks_flat = new_non_masks.flatten(0, 1).to(device=device)
                 distill_loss = (torch.diag(new_non_masks_flat @ non_masks_flat.T).sum() / (~action_masks[:, 0, :]).sum()) * distill_coeff
-                p_loss = (-term1.min(term2).mean() + -distill_loss + -entropy_loss) / gradient_steps
+
+                # Compute diversity of [MASK]s
+                div_loss = ((new_non_masks_flat @ new_non_masks_flat.T).sum() / (~action_masks[:, 0, :]).sum()) * 0.003
+
+                p_loss = (-term1.min(term2).mean() + -distill_loss + -entropy_loss + div_loss) / gradient_steps
                 
                 p_loss.backward()
                 total_p_loss += p_loss.item()
